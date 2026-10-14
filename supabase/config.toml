@@ -1,0 +1,18 @@
+# Configuration Supabase CLI (extrait). `supabase init` peut compléter le reste.
+project_id = "vault"
+
+[auth]
+site_url = "vault://"
+additional_redirect_urls = ["vault://auth/callback", "http://localhost:8081"]
+enable_signup = true
+
+[auth.email]
+enable_confirmations = true
+
+# Retour du parcours bancaire : appelé par le navigateur, sans JWT. Sécurisé par le `state` à usage unique.
+[functions.bank-callback]
+verify_jwt = false
+
+# Webhooks du prestataire : sans JWT, sécurisés par signature HMAC.
+[functions.bank-webhook]
+verify_jwt = false
