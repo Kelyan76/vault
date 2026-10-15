@@ -120,12 +120,13 @@ export function supabaseSyncRepository(db: SupabaseClient, provider: 'bridge' | 
     },
     async loadTransactions(connectionId, ids) {
       const out: StoredBankTransaction[] = [];
-      for (let i = 0; i < ids.length; i += 500) {
+      // Paquets de 50 : la liste d'identifiants passe dans l'adresse de la requête, dont la longueur est limitée.
+      for (let i = 0; i < ids.length; i += 50) {
         const { data, error } = await db
           .from('bank_transactions')
           .select('id, provider_transaction_id, provider_account_id, booking_date, label, amount_minor, currency, provider_category, operation_type, status, removed, provider_updated_at, synced_at')
           .eq('connection_id', connectionId)
-          .in('provider_transaction_id', ids.slice(i, i + 500));
+          .in('provider_transaction_id', ids.slice(i, i + 50));
         if (error) throw new Error('load_transactions');
         for (const t of data ?? []) {
           out.push({

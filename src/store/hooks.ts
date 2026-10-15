@@ -4,16 +4,19 @@ import { addDays, diffDays, periodContaining, previousPeriod, type PeriodKind } 
 import { budgetStatus } from '@shared/domain/budgets.ts';
 import { allTransactions, dataQuality, evaluateAll, goalsProgress, progress, questContext, streaks } from './derive';
 import { useStore } from './store';
+import { useServerBank } from '@/features/bank/serverBank';
 
 export function useTransactions(): ClassifiedTransaction[] {
   const { data } = useStore();
-  return useMemo(() => allTransactions(data), [data]);
+  const server = useServerBank().data;
+  return useMemo(() => allTransactions(data, server), [data, server]);
 }
 
 export function useDataQuality() {
   const { data, space } = useStore();
+  const server = useServerBank().data;
   const txs = useTransactions();
-  return useMemo(() => dataQuality(data, txs, space), [data, txs, space]);
+  return useMemo(() => dataQuality(data, txs, space, server), [data, txs, space, server]);
 }
 
 export function useProgress() {
@@ -28,8 +31,9 @@ export function useGoals() {
 
 export function useQuestEvaluations() {
   const { data, space, today } = useStore();
+  const server = useServerBank().data;
   const txs = useTransactions();
-  return useMemo(() => evaluateAll(data, questContext(data, txs, space, today)), [data, txs, space, today]);
+  return useMemo(() => evaluateAll(data, questContext(data, txs, space, today, server)), [data, txs, space, today, server]);
 }
 
 export function useStreaks() {

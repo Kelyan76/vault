@@ -9,6 +9,7 @@ import type { AvoidedExpense, SavingsEntry, SavingsGoal } from '../../supabase/f
 import type { CategoryOverride, Transaction } from '../../supabase/functions/_shared/domain/transactions.ts';
 import type { XpEvent } from '../../supabase/functions/_shared/domain/xp.ts';
 import type { AchievementId } from '../../supabase/functions/_shared/domain/achievements.ts';
+import type { FuelInput, GroceryInput } from '../../supabase/functions/_shared/domain/forecast.ts';
 
 /** Deux espaces qui ne se mélangent jamais : la démo (données fictives) et mes données. */
 export type Space = 'demo' | 'personal';
@@ -89,6 +90,8 @@ export interface UserData {
   friends: Friend[];
   challenges: LocalChallenge[];
   reports: { friendId: string; reason: string; at: string }[];
+  /** Réglages de l'outil de prévision (absents tant que l'utilisateur ne l'a pas ouvert). */
+  forecast?: { grocery: GroceryInput; fuel: FuelInput; updatedAt: string };
 }
 
 export interface Meta {

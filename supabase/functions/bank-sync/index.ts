@@ -17,7 +17,11 @@ Deno.serve(async (req) => {
 
   const bearer = req.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';
   if (body?.scheduled) {
-    if (!timingSafeEqual(bearer, env('SUPABASE_SERVICE_ROLE_KEY'))) return json({ error: 'unauthorized' }, 401);
+    // Tâche planifiée : secret dédié (en-tête x-vault-cron), ou clé service_role selon le format du projet.
+    const cron = Deno.env.get('SYNC_CRON_SECRET') ?? '';
+    const byCron = cron.length >= 32 && timingSafeEqual(req.headers.get('x-vault-cron') ?? '', cron);
+    const byService = timingSafeEqual(bearer, env('SUPABASE_SERVICE_ROLE_KEY'));
+    if (!byCron && !byService) return json({ error: 'unauthorized' }, 401);
     const staleBefore = new Date(Date.now() - 12 * 3600_000).toISOString();
     const { data: due } = await db
       .from('bank_connections')

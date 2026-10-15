@@ -61,7 +61,7 @@ export default function Vault() {
                     {shortDate(t.date)} · {money(-t.amountMinor, t.currency)}
                   </T>
                 </View>
-                <Button small kind="secondary" label="Ajouter" onPress={() => setMsg(act((d, env) => confirmSavingsTransfer(d, t.id, goals[0]?.goal.id ?? null, env)))} />
+                <Button small kind="secondary" label="Ajouter" onPress={() => setMsg(act((d, env) => confirmSavingsTransfer(d, t, goals[0]?.goal.id ?? null, env)))} />
               </Row>
             ))}
           </Card>

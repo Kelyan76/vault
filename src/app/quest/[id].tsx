@@ -102,7 +102,7 @@ export default function QuestDetail() {
                 return (
                   <Pressable key={i} onPress={() => run((d, env) => toggleQuestStep(d, uq.id, i, env))} accessibilityRole="checkbox" accessibilityState={{ checked }} style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
                     <View style={{ width: 26, height: 26, borderRadius: 9, borderWidth: 2, borderColor: checked ? colors.quest : colors.border, backgroundColor: checked ? colors.quest : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {checked ? <Icon name="check" size={15} color="#fff" strokeWidth={3} /> : null}
+                      {checked ? <Icon name="check" size={15} color={colors.onColor} strokeWidth={3} /> : null}
                     </View>
                     <T style={{ flex: 1, textDecorationLine: checked ? 'line-through' : 'none' }} color={checked ? colors.textMuted : colors.text}>
                       {step}

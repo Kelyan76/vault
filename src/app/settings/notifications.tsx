@@ -38,7 +38,7 @@ export default function Notifications() {
                   </T>
                 </View>
                 <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: on ? colors.primary : colors.border, padding: 3, alignItems: on ? 'flex-end' : 'flex-start' }}>
-                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' }} />
+                  <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: colors.text }} />
                 </View>
               </Pressable>
             </View>

@@ -34,7 +34,7 @@ export default function Transactions() {
   }, [txs, query, range, cat, today]);
 
   return (
-    <Screen back title="Opérations" right={<IconButton icon="plus" label="Ajouter une opération" onPress={() => router.push('/transactions/new')} bg={colors.primary} color="#fff" />}>
+    <Screen back title="Opérations" right={<IconButton icon="plus" label="Ajouter une opération" onPress={() => router.push('/transactions/new')} bg={colors.primary} color={colors.onPrimary} />}>
       <Field label="Rechercher" value={query} onChangeText={setQuery} placeholder="Libellé, ex. Lidl" autoCorrect={false} />
       <Row gap={8} style={{ flexWrap: 'wrap', marginTop: space.sm }}>
         {RANGES.map((r) => (

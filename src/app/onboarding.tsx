@@ -128,7 +128,7 @@ export default function Onboarding() {
 
 const styles = StyleSheet.create({
   dots: { flexDirection: 'row', gap: 6, alignSelf: 'center' },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#DDD5C8' },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
   hero: { alignItems: 'center', justifyContent: 'center', minHeight: 230, backgroundColor: colors.card, borderRadius: radius.xl, paddingVertical: space.lg },
   choice: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.sm, borderWidth: 1.5, borderColor: colors.border },
   avatars: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },

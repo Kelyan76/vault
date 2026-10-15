@@ -5,6 +5,8 @@
   "dependencies": {
     "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@expo-google-fonts/sora": "^0.4.2",
+    "@expo-google-fonts/space-mono": "^0.4.2",
+    "@expo-google-fonts/unbounded": "^0.4.1",
     "@expo/ui": "~57.0.23",
     "@supabase/supabase-js": "^2.117.3",
     "expo": "~57.0.28",

@@ -90,8 +90,8 @@ export default function Habits() {
                           <T v="tiny" color={colors.textMuted}>
                             {weekday(d).toUpperCase().slice(0, 3)}
                           </T>
-                          <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: done ? colors.habit : editable ? colors.surfaceAlt : '#F0EBE3', alignItems: 'center', justifyContent: 'center', borderWidth: d === today ? 2 : 0, borderColor: colors.habit }}>
-                            {done ? <Icon name="check" size={16} color="#fff" strokeWidth={3} /> : null}
+                          <View style={{ width: 34, height: 34, borderRadius: 12, backgroundColor: done ? colors.habit : editable ? colors.surfaceAlt : colors.card, alignItems: 'center', justifyContent: 'center', borderWidth: d === today ? 2 : 0, borderColor: colors.habit }}>
+                            {done ? <Icon name="check" size={16} color={colors.onColor} strokeWidth={3} /> : null}
                           </View>
                         </Pressable>
                       );

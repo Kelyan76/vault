@@ -106,7 +106,7 @@ export function CelebrationHost() {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(40,36,58,0.45)', justifyContent: 'center', padding: space.xl, overflow: 'hidden' },
+  backdrop: { flex: 1, backgroundColor: 'rgba(5,7,4,0.72)', justifyContent: 'center', padding: space.xl, overflow: 'hidden' },
   sheet: { backgroundColor: colors.card, borderRadius: radius.xl, padding: space.xl, gap: space.sm, maxWidth: 420, width: '100%', alignSelf: 'center' },
   level: { backgroundColor: colors.primary, borderRadius: radius.lg, padding: space.lg, alignItems: 'center' },
   badgeRow: { flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: colors.rewardSoft, borderRadius: radius.md, padding: space.md },

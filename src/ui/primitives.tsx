@@ -19,7 +19,13 @@ export function Card({ children, style, tone, onPress, accessibilityLabel }: { c
   const body = <View style={[styles.card, tone ? { backgroundColor: tone } : null, style]}>{children}</View>;
   if (!onPress) return body;
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={({ pressed }) => [pressed && { transform: [{ scale: 0.985 }], opacity: 0.95 }]}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      // La carte cliquable garde la place que lui donne sa mise en page (ex. flex: 1 dans une rangée).
+      style={({ pressed }) => [{ flex: StyleSheet.flatten(style)?.flex }, pressed && { transform: [{ scale: 0.985 }], opacity: 0.95 }]}
+    >
       {body}
     </Pressable>
   );
@@ -51,7 +57,7 @@ export function Button({
     secondary: { bg: colors.card, fg: colors.primary, border: colors.border },
     ghost: { bg: 'transparent', fg: colors.primary },
     danger: { bg: colors.alertSoft, fg: colors.alert },
-    reward: { bg: colors.reward, fg: colors.text },
+    reward: { bg: colors.reward, fg: colors.onColor },
   };
   const p = palette[kind];
   return (
@@ -73,7 +79,7 @@ export function Button({
       ]}
     >
       {loading ? <ActivityIndicator color={p.fg} /> : icon ? <Icon name={icon} size={small ? 16 : 19} color={p.fg} /> : null}
-      <Text style={[small ? type.small : type.bodyStrong, { color: p.fg, fontFamily: fonts.bodyBold }]}>{label}</Text>
+      <Text style={[small ? type.small : type.bodyStrong, { color: p.fg, fontFamily: small ? fonts.bodyBold : fonts.displaySemi, textTransform: 'uppercase', letterSpacing: 0.4, fontSize: small ? 12 : 14 }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -149,7 +155,7 @@ export function Field({ label, hint, error, ...props }: TextInputProps & { label
         {label}
       </T>
       <TextInput
-        placeholderTextColor="#B5AFC0"
+        placeholderTextColor={colors.textMuted}
         accessibilityLabel={label}
         {...props}
         style={[styles.input, error ? { borderColor: colors.alert } : null, props.multiline && { minHeight: 90, textAlignVertical: 'top' }, props.style]}
@@ -191,10 +197,10 @@ export function PopIn({ children, delay = 0 }: { children: ReactNode; delay?: nu
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, ...shadow.card },
-  button: { minHeight: 52, borderRadius: radius.md, paddingHorizontal: space.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.xs, borderWidth: 1 },
-  buttonSmall: { minHeight: 38, paddingHorizontal: space.md, borderRadius: radius.sm },
-  iconButton: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center', ...shadow.card },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, borderWidth: 1, borderColor: colors.border },
+  button: { minHeight: 54, borderRadius: radius.pill, paddingHorizontal: space.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.xs, borderWidth: 1 },
+  buttonSmall: { minHeight: 38, paddingHorizontal: space.md, borderRadius: radius.pill },
+  iconButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.border },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 4, borderRadius: radius.pill, alignSelf: 'flex-start' },
   chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: radius.pill, borderWidth: 1 },
   section: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: space.xl, marginBottom: space.sm },

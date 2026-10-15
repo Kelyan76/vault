@@ -101,3 +101,38 @@ export function Ring({ value, size = 64, thickness = 7, color = colors.habit, tr
     </Svg>
   );
 }
+
+/** Bulles proportionnelles (part des dépenses par catégorie), façon « Spendees ». */
+export function Bubbles({ parts, size = 150 }: { parts: { key: string; value: number; color: string; label: string }[]; size?: number }) {
+  const total = parts.reduce((s, p) => s + p.value, 0);
+  const top = parts.slice(0, 3);
+  // Positions fixes : grande bulle en haut à droite, deux plus petites autour.
+  const slots = [
+    { cx: 0.6, cy: 0.38, max: 0.36 },
+    { cx: 0.7, cy: 0.78, max: 0.24 },
+    { cx: 0.22, cy: 0.68, max: 0.2 },
+  ];
+  return (
+    <Svg width={size} height={size} accessibilityLabel="Répartition des dépenses">
+      {total > 0
+        ? top.map((p, i) => {
+            const share = p.value / total;
+            const r = Math.max(0.12, Math.min(slots[i].max, Math.sqrt(share) * 0.42)) * size;
+            return (
+              <G key={p.key}>
+                <Circle cx={slots[i].cx * size} cy={slots[i].cy * size} r={r} fill={p.color} opacity={0.92} />
+                <SvgText x={slots[i].cx * size} y={slots[i].cy * size + 2} textAnchor="middle" fontFamily={fonts.mono} fontSize={Math.max(10, r * 0.42)} fill={colors.onColor}>
+                  {`${Math.round(share * 100)}%`}
+                </SvgText>
+                {r > size * 0.18 ? (
+                  <SvgText x={slots[i].cx * size} y={slots[i].cy * size + r * 0.42} textAnchor="middle" fontFamily={fonts.bodyBold} fontSize={8} fill={colors.onColor}>
+                    {p.label.toUpperCase().slice(0, 14)}
+                  </SvgText>
+                ) : null}
+              </G>
+            );
+          })
+        : null}
+    </Svg>
+  );
+}

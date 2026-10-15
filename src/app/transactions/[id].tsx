@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
-import { CATEGORY_IDS } from '@shared/domain/transactions.ts';
+import { CATEGORY_IDS, type CategoryId } from '@shared/domain/transactions.ts';
 import { deleteManualTransaction, setCategory } from '@/store/actions';
 import { useTransactions } from '@/store/hooks';
 import { useStore } from '@/store/store';
+import { useServerBank } from '@/features/bank/serverBank';
 import { Screen, ErrorState, Notice } from '@/ui/layout';
 import { IconBubble } from '@/ui/Icon';
 import { Button, Card, Chip, Divider, Pill, Row, SectionTitle, T } from '@/ui/primitives';
@@ -16,12 +17,18 @@ export default function TransactionDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const txs = useTransactions();
   const { act, data } = useStore();
+  const server = useServerBank();
   const [msg, setMsg] = useState<{ tone: 'success' | 'alert'; text: string } | null>(null);
   const tx = txs.find((t) => t.id === decodeURIComponent(id ?? ''));
   if (!tx) return <Screen back title="Opération"><ErrorState text="Opération introuvable (elle a peut-être été supprimée)." /></Screen>;
   const meta = categoryMeta(tx.classified.category);
-  const account = data.bank.accounts.find((a) => a.id === tx.accountId);
-  const override = data.overrides.find((o) => o.transactionId === tx.id);
+  const isServer = tx.source === 'bank';
+  const override = isServer ? server.data?.overrides.find((o) => o.transactionId === tx.id) : data.overrides.find((o) => o.transactionId === tx.id);
+  const account = data.bank.accounts.find((a) => a.id === tx.accountId) ?? server.data?.accountsFull.find((a) => a.id === tx.accountId);
+  async function changeCategory(c: CategoryId | null) {
+    const err = isServer ? await server.setCategory(tx!.id, c) : act((d, env) => setCategory(d, tx!.id, c, env));
+    setMsg(err ? { tone: 'alert', text: err } : { tone: 'success', text: c ? `Classée dans « ${categoryMeta(c).label} ».` : 'Catégorie d’origine rétablie.' });
+  }
 
   return (
     <Screen back>
@@ -86,15 +93,12 @@ export default function TransactionDetail() {
             label={categoryMeta(c).label}
             selected={tx.classified.category === c}
             color={categoryMeta(c).color}
-            onPress={() => {
-              const err = act((d, env) => setCategory(d, tx.id, c, env));
-              setMsg(err ? { tone: 'alert', text: err } : { tone: 'success', text: `Classée dans « ${categoryMeta(c).label} ».` });
-            }}
+            onPress={() => changeCategory(c)}
           />
         ))}
       </Row>
       {override && tx.source !== 'manual' ? (
-        <Button kind="ghost" label="Revenir à la catégorie d’origine" onPress={() => { act((d, env) => setCategory(d, tx.id, null, env)); setMsg({ tone: 'success', text: 'Catégorie d’origine rétablie.' }); }} />
+        <Button kind="ghost" label="Revenir à la catégorie d’origine" onPress={() => changeCategory(null)} />
       ) : null}
       {msg ? <View style={{ marginTop: space.sm }}><Notice tone={msg.tone} text={msg.text} /></View> : null}
 

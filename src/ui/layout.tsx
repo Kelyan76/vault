@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginBottom: space.md,
     borderWidth: 1,
-    borderColor: '#D9D3F6',
+    borderColor: colors.demo,
     borderStyle: 'dashed',
   },
   empty: { alignItems: 'center', gap: space.sm, padding: space.xl, backgroundColor: colors.card, borderRadius: radius.lg },

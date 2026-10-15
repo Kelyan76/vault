@@ -6,7 +6,8 @@ import { goalProgress, type GoalProgress } from '../../supabase/functions/_share
 import { levelInfo, totalXp, type LevelInfo } from '../../supabase/functions/_shared/domain/xp.ts';
 import { DEMO_CATEGORY_MAP } from '../../supabase/functions/_shared/banking/demo.ts';
 import { isHealthy } from '../../supabase/functions/_shared/banking/status.ts';
-import type { Transaction } from '../../supabase/functions/_shared/domain/transactions.ts';
+import type { AccountType, CategoryOverride, Transaction } from '../../supabase/functions/_shared/domain/transactions.ts';
+import type { ConnectionStatus } from '../../supabase/functions/_shared/banking/types.ts';
 import type { Space, UserData } from './types.ts';
 
 export function bankTransactionsAsDomain(data: UserData): Transaction[] {
@@ -31,20 +32,29 @@ export function bankTransactionsAsDomain(data: UserData): Transaction[] {
   }));
 }
 
-export function allTransactions(data: UserData): ClassifiedTransaction[] {
-  const accounts = data.bank.accounts.map((a) => ({ id: a.id, type: a.type }));
-  const txs = [...bankTransactionsAsDomain(data), ...data.manualTransactions];
-  // La catégorie choisie lors d'une saisie manuelle est enregistrée comme correction de l'utilisateur.
+/** Données bancaires réelles lues sur le serveur (compte VAULT connecté), absentes en démo et en local. */
+export interface ServerBank {
+  transactions: Transaction[];
+  accounts: { id: string; type: AccountType }[];
+  overrides: CategoryOverride[];
+  connections: { status: ConnectionStatus; lastSuccessfulSyncAt: string | null; firstTransactionDate: string | null; disconnectedAt: string | null }[];
+}
+
+export function allTransactions(data: UserData, server?: ServerBank | null): ClassifiedTransaction[] {
+  const accounts = [...data.bank.accounts.map((a) => ({ id: a.id, type: a.type })), ...(server?.accounts ?? [])];
+  const txs = [...bankTransactionsAsDomain(data), ...data.manualTransactions, ...(server?.transactions ?? [])];
+  // La catégorie choisie lors d'une saisie manuelle est enregistrée comme correction de l'utilisateur ;
+  // les corrections des opérations bancaires réelles viennent du serveur.
   return classifyAll(txs, {
     accounts,
-    overrides: data.overrides,
+    overrides: [...data.overrides, ...(server?.overrides ?? [])],
     ctx: { providerMap: DEMO_CATEGORY_MAP },
   })
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
 }
 
-export function dataQuality(data: UserData, txs: ClassifiedTransaction[], space: Space): DataQuality {
-  const live = data.bank.connections.filter((c) => !c.disconnectedAt);
+export function dataQuality(data: UserData, txs: ClassifiedTransaction[], space: Space, server?: ServerBank | null): DataQuality {
+  const live = [...data.bank.connections, ...(server?.connections ?? [])].filter((c) => !c.disconnectedAt);
   const spending = txs.filter((t) => t.source !== 'manual' && t.classified.kind === 'expense' && t.status === 'booked');
   const uncategorized = spending.length ? spending.filter((t) => t.classified.category === 'other' && t.classified.source === 'default').length / spending.length : 0;
   if (live.length === 0) {
@@ -63,7 +73,7 @@ export function goalsProgress(data: UserData): GoalProgress[] {
   return data.goals.filter((g) => !g.archivedAt).map((g) => goalProgress(g, data.entries));
 }
 
-export function questContext(data: UserData, txs: ClassifiedTransaction[], space: Space, today: string): QuestContext {
+export function questContext(data: UserData, txs: ClassifiedTransaction[], space: Space, today: string, server?: ServerBank | null): QuestContext {
   return {
     today,
     transactions: txs,
@@ -73,7 +83,7 @@ export function questContext(data: UserData, txs: ClassifiedTransaction[], space
     budgets: data.budgets,
     habitCompletions: data.habitCompletions,
     weeklyReviews: data.weeklyReviews.map((w) => w.date),
-    data: dataQuality(data, txs, space),
+    data: dataQuality(data, txs, space, server),
   };
 }
 

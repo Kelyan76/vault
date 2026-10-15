@@ -36,12 +36,10 @@ function VaultTabBar({ state, navigation }: TabBarProps) {
                 const e = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
                 if (!focused && !e.defaultPrevented) navigation.navigate(route.name);
               }}
-              style={styles.item}
+              style={[styles.item, focused ? styles.itemActive : styles.itemIdle]}
             >
-              <View style={[styles.iconWrap, focused && { backgroundColor: colors.primarySoft }]}>
-                <Icon name={tab.icon} size={21} color={focused ? colors.primary : colors.textMuted} strokeWidth={focused ? 2.3 : 2} />
-              </View>
-              <Text style={[styles.label, { color: focused ? colors.primary : colors.textMuted }]}>{tab.label}</Text>
+              <Icon name={tab.icon} size={20} color={focused ? colors.onPrimary : colors.text} strokeWidth={2.4} />
+              {focused ? <Text style={styles.label}>{tab.label}</Text> : null}
             </Pressable>
           );
         })}
@@ -63,20 +61,23 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  wrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14 },
+  wrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12 },
   bar: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     backgroundColor: colors.card,
-    borderRadius: radius.xl,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    maxWidth: 560,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: 6,
+    maxWidth: 520,
     width: '100%',
     alignSelf: 'center',
-    ...shadow.lifted,
-    shadowOpacity: 0.12,
+    ...shadow.card,
   },
-  item: { flex: 1, alignItems: 'center', gap: 2 },
-  iconWrap: { width: 46, height: 32, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  label: { fontFamily: fonts.bodySemi, fontSize: 11 },
+  item: { height: 48, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  itemActive: { flexGrow: 1, flexBasis: 0, minWidth: 104, backgroundColor: colors.primary, paddingHorizontal: 12 },
+  itemIdle: { width: 48, backgroundColor: colors.cardHigh },
+  label: { fontFamily: fonts.displaySemi, fontSize: 12, color: colors.onPrimary, textTransform: 'uppercase', letterSpacing: 0.3 },
 });

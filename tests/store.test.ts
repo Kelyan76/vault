@@ -133,10 +133,10 @@ test('dépense évitée : estimation séparée, mise de côté explicite et plaf
 test('virement observé vers l’épargne : confirmé une seule fois', () => {
   const d = demoUserData(env('2026-10-14', 'demo'));
   const out = d.bank.transactions.find((t) => t.label === 'VIR VERS LIVRET DEMO')!;
-  const r = A.confirmSavingsTransfer(d, out.id, 'demo-g2', env('2026-10-14', 'demo'));
+  const r = A.confirmSavingsTransfer(d, out, 'demo-g2', env('2026-10-14', 'demo'));
   assert.equal(r.error, undefined);
   assert.equal(r.data.entries.at(-1)!.kind, 'observed_transfer');
-  assert.match(A.confirmSavingsTransfer(r.data, out.id, null, env('2026-10-14', 'demo')).error!, /déjà/);
+  assert.match(A.confirmSavingsTransfer(r.data, out, null, env('2026-10-14', 'demo')).error!, /déjà/);
 });
 
 test('habitudes : bonus de série une fois par palier et par série', () => {
@@ -155,7 +155,7 @@ test('habitudes : bonus de série une fois par palier et par série', () => {
 test('déconnexion de la banque fictive : historique gardé ou supprimé, coffre intact', () => {
   const d0 = demoUserData(env('2026-10-14', 'demo'));
   const out = d0.bank.transactions.find((t) => t.label === 'VIR VERS LIVRET DEMO')!;
-  const d = A.confirmSavingsTransfer(d0, out.id, null, env('2026-10-14', 'demo')).data;
+  const d = A.confirmSavingsTransfer(d0, out, null, env('2026-10-14', 'demo')).data;
   const keep = A.disconnectDemoBank(d, false, env('2026-10-14', 'demo')).data;
   assert.equal(keep.bank.connections[0].status, 'disconnected');
   assert.ok(keep.bank.transactions.length > 0);

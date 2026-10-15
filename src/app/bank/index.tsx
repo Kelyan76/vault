@@ -200,7 +200,7 @@ export default function ConnectBank() {
             style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start', marginTop: space.lg, padding: space.md, backgroundColor: colors.card, borderRadius: radius.md, borderWidth: 1.5, borderColor: consent ? colors.primary : colors.border }}
           >
             <View style={{ width: 26, height: 26, borderRadius: 8, borderWidth: 2, borderColor: consent ? colors.primary : colors.border, backgroundColor: consent ? colors.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-              {consent ? <Icon name="check" size={15} color="#fff" strokeWidth={3} /> : null}
+              {consent ? <Icon name="check" size={15} color={colors.onColor} strokeWidth={3} /> : null}
             </View>
             <T v="small" style={{ flex: 1 }}>
               J’accepte que VAULT accède, via le prestataire, aux données listées ci-dessus pour les comptes que je choisirai. Je peux retirer cet accord à tout moment depuis « Connexions bancaires ». (version {CONSENT_VERSION})

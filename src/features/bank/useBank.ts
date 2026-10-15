@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
 import type { ConnectionStatus } from '@shared/banking/types.ts';
 import type { AccountType } from '@shared/domain/transactions.ts';
 import { useAuth } from '@/features/auth/auth';
-import { supabase } from '@/lib/supabase';
+import { useServerBank } from './serverBank';
 import { useStore } from '@/store/store';
 
 export interface BankConnectionView {
@@ -50,56 +49,7 @@ export interface BankView {
 export function useBank(): BankView {
   const { space, data } = useStore();
   const auth = useAuth();
-  const [state, setState] = useState<{ loading: boolean; error: string | null; connections: BankConnectionView[]; accounts: BankAccountView[] }>({ loading: false, error: null, connections: [], accounts: [] });
-  const [tick, setTick] = useState(0);
-  const reload = useCallback(() => setTick((t) => t + 1), []);
-  const serverMode = space === 'personal' && auth.configured && !!auth.session;
-
-  useEffect(() => {
-    if (!serverMode) return;
-    const sb = supabase();
-    if (!sb) return;
-    let cancelled = false;
-    setState((s) => ({ ...s, loading: true, error: null }));
-    (async () => {
-      const [c, a] = await Promise.all([
-        sb.from('my_bank_connections').select('id, provider, status, institution_name, consent_expires_at, last_successful_sync_at, disconnected_at').order('created_at'),
-        sb.from('bank_accounts').select('id, connection_id, name, type, balance_minor, currency, iban_last4, synced_at'),
-      ]);
-      if (cancelled) return;
-      if (c.error || a.error) {
-        setState({ loading: false, error: 'Impossible de charger tes connexions bancaires.', connections: [], accounts: [] });
-        return;
-      }
-      setState({
-        loading: false,
-        error: null,
-        connections: (c.data ?? []).map((r) => ({
-          id: r.id,
-          institution: r.institution_name ?? 'Ma banque',
-          status: r.status,
-          lastSyncAt: r.last_successful_sync_at,
-          consentExpiresAt: r.consent_expires_at,
-          disconnectedAt: r.disconnected_at,
-          demo: false,
-        })),
-        accounts: (a.data ?? []).map((r) => ({
-          id: r.id,
-          connectionId: r.connection_id,
-          name: r.name ?? 'Compte',
-          type: r.type,
-          balanceMinor: r.balance_minor === null ? null : Number(r.balance_minor),
-          currency: r.currency,
-          ibanLast4: r.iban_last4,
-          syncedAt: r.synced_at,
-          demo: false,
-        })),
-      });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [serverMode, tick]);
+  const server = useServerBank();
 
   if (space === 'demo') {
     return {
@@ -107,7 +57,7 @@ export function useBank(): BankView {
       unavailableReason: null,
       loading: false,
       error: null,
-      reload,
+      reload: server.reload,
       connections: data.bank.connections.map((c) => ({
         id: c.id,
         institution: c.institutionName,
@@ -130,7 +80,25 @@ export function useBank(): BankView {
       })),
     };
   }
-  if (serverMode) return { source: 'server', unavailableReason: null, reload, ...state };
+  if (server.active) {
+    return {
+      source: 'server',
+      unavailableReason: null,
+      loading: server.loading,
+      error: server.error,
+      reload: server.reload,
+      connections: (server.data?.connectionsFull ?? []).map((c) => ({
+        id: c.id,
+        institution: c.institution,
+        status: c.status,
+        lastSyncAt: c.lastSuccessfulSyncAt,
+        consentExpiresAt: c.consentExpiresAt,
+        disconnectedAt: c.disconnectedAt,
+        demo: false,
+      })),
+      accounts: (server.data?.accountsFull ?? []).map((a) => ({ ...a, demo: false })),
+    };
+  }
   return {
     source: 'unavailable',
     unavailableReason: !auth.configured
@@ -140,7 +108,7 @@ export function useBank(): BankView {
     error: null,
     connections: [],
     accounts: [],
-    reload,
+    reload: server.reload,
   };
 }
 

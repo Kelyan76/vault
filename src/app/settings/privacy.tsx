@@ -17,7 +17,7 @@ function Toggle({ value, onChange, label, hint }: { value: boolean; onChange: (v
         </T>
       </View>
       <View style={{ width: 50, height: 30, borderRadius: 15, backgroundColor: value ? colors.primary : colors.border, padding: 3, alignItems: value ? 'flex-end' : 'flex-start' }}>
-        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' }} />
+        <View style={{ width: 24, height: 24, borderRadius: 12, backgroundColor: colors.text }} />
       </View>
     </Pressable>
   );

@@ -18,6 +18,7 @@ import {
 import { isCategoryId, type CategoryId, type TransactionKind } from '../../supabase/functions/_shared/domain/transactions.ts';
 import { awardXp, levelInfo, STREAK_MILESTONES, totalXp, XP_RULES, xpKeys, type XpReason } from '../../supabase/functions/_shared/domain/xp.ts';
 import { sanitizeSharedScore, validatePseudo, type ChallengeType } from '../../supabase/functions/_shared/domain/challenges.ts';
+import { fuelForecast, groceryForecast, validateFuel, validateGrocery, type FuelInput, type GroceryInput } from '../../supabase/functions/_shared/domain/forecast.ts';
 import { applyMerge, mergeTransactions } from '../../supabase/functions/_shared/banking/sync.ts';
 import { DEMO_ACCOUNTS, DEMO_CONNECTION_ID, DEMO_INSTITUTION, demoTransactions } from '../../supabase/functions/_shared/banking/demo.ts';
 import type { ActionEffects, Avatar, Friend, Profile, Space, UserData } from './types.ts';
@@ -236,9 +237,14 @@ export function correctSavingsEntry(data: UserData, entryId: string, newAmountMi
 }
 
 /** L'utilisateur confirme qu'un virement détecté vers son épargne alimente un objectif. */
-export function confirmSavingsTransfer(data: UserData, transactionId: string, goalId: string | null, env: Env): Result {
+export function confirmSavingsTransfer(
+  data: UserData,
+  tx: { id: string; amountMinor: number; removed?: boolean; currency: string; date: string; label: string },
+  goalId: string | null,
+  env: Env,
+): Result {
+  const transactionId = tx.id;
   return run(data, env, (d, fx) => {
-    const tx = d.bank.transactions.find((t) => t.id === transactionId) ?? fail('Opération introuvable.');
     if (tx.amountMinor >= 0 || tx.removed) fail('Seul un virement sortant confirmé peut être ajouté.');
     if (d.entries.some((e) => e.sourceTransactionId === transactionId)) fail('Ce virement est déjà dans le coffre.');
     const amount = -tx.amountMinor;
@@ -562,4 +568,25 @@ export function refreshMyScores(data: UserData, env: Env): Result {
       participants: c.participants.map((p) => (p.userId === 'me' && !p.left ? { ...p, pseudo: d.profile.pseudo, avatar: d.profile.avatar, sharedScore: myChallengeScore(d, c.type, c.startDate, c.endDate) } : p)),
     })),
   }));
+}
+
+// ——— Prévisions ———
+
+export function saveForecast(data: UserData, input: { grocery: GroceryInput; fuel: FuelInput }, env: Env): Result {
+  return run(data, env, (d) => {
+    const err = validateGrocery(input.grocery) ?? validateFuel(input.fuel);
+    if (err) fail(err);
+    return { ...d, forecast: { grocery: input.grocery, fuel: input.fuel, updatedAt: env.now } };
+  });
+}
+
+/** Transforme la prévision en budgets mensuels « Alimentation » et « Transport » (arrondis à l'euro supérieur). */
+export function applyForecastBudgets(data: UserData, input: { grocery: GroceryInput; fuel: FuelInput }, env: Env): Result {
+  const groceries = Math.ceil(groceryForecast(input.grocery).monthlyMinor / 100) * 100;
+  const fuel = Math.ceil(fuelForecast(input.fuel).monthlyMinor / 100) * 100;
+  let r = saveForecast(data, input, env);
+  if (r.error) return r;
+  r = upsertBudget(r.data, { category: 'groceries', limitMinor: groceries, period: 'month' }, env);
+  if (r.error || fuel <= 0) return r;
+  return upsertBudget(r.data, { category: 'transport', limitMinor: fuel, period: 'month' }, env);
 }

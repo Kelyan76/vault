@@ -106,7 +106,8 @@ export async function runSync(
     return { kind: 'succeeded', inserted: merge.inserts.length, updated: merge.updates.length, removed: merge.removals.length, status: 'connected' };
   } catch (e) {
     const retryable = e instanceof ProviderError ? e.retryable : true;
-    const code = e instanceof ProviderError ? e.code : 'internal_error';
+    // Nos propres erreurs portent un code court (ex. « load_transactions ») : on le garde, sans autre détail.
+    const code = e instanceof ProviderError ? e.code : e instanceof Error && /^[a-z_]{3,40}$/.test(e.message) ? e.message : 'internal_error';
     const failures = (await repo.countFailures(conn.id)) + 1;
     const nextRetryAt = retryable && failures < 6 ? new Date(deps.now().getTime() + Math.min(6 * 3600_000, 60_000 * 2 ** (failures - 1))).toISOString() : null;
     await repo.updateConnection(conn.id, { status: 'sync_error' });
