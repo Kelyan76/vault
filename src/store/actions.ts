@@ -618,3 +618,49 @@ export function setFuelGauge(data: UserData, gauge: number | null, env: Env): Re
     return { ...d, forecast: { ...d.forecast!, fuel: { ...d.forecast!.fuel, gauge, gaugeDate: gauge === null ? null : env.today } } };
   });
 }
+
+/**
+ * Vide le coffre : une écriture de retrait par nature (déclaré / virement observé) ramène chaque objectif
+ * et le total à 0. Rien n'est effacé : l'historique garde les dépôts et le retrait.
+ */
+export function emptyVault(data: UserData, env: Env): Result {
+  return run(data, env, (d) => {
+    const currency = d.profile.currency;
+    const goals = d.goals.filter((g) => g.currency === currency);
+    const newEntries: SavingsEntry[] = [];
+    for (const kind of ['declared', 'observed_transfer'] as const) {
+      const total = d.entries.filter((e) => e.currency === currency && e.kind === kind).reduce((s, e) => s + e.amountMinor, 0);
+      if (total <= 0) continue;
+      const allocations = goals
+        .map((g) => ({
+          goalId: g.id,
+          amountMinor: -d.entries
+            .filter((e) => e.currency === currency && e.kind === kind)
+            .reduce((s, e) => s + e.allocations.filter((a) => a.goalId === g.id).reduce((n, a) => n + a.amountMinor, 0), 0),
+        }))
+        .filter((a) => a.amountMinor < 0);
+      newEntries.push({
+        id: env.id(),
+        kind,
+        amountMinor: -total,
+        currency,
+        date: env.today,
+        note: 'Coffre vidé',
+        allocations,
+        sourceTransactionId: null,
+        createdAt: env.now,
+        updatedAt: env.now,
+      });
+    }
+    if (!newEntries.length) fail('Le coffre est déjà vide.');
+    for (const e of newEntries) {
+      const err = validateEntry(e, d.goals);
+      if (err) fail(err);
+    }
+    return {
+      ...d,
+      entries: [...d.entries, ...newEntries],
+      entryHistory: [...d.entryHistory, ...newEntries.map((e) => ({ entryId: e.id, action: 'created' as const, amountMinor: e.amountMinor, at: env.now }))],
+    };
+  });
+}

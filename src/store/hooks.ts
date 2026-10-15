@@ -8,6 +8,7 @@ import { useServerBank } from '@/features/bank/serverBank';
 import { useBank } from '@/features/bank/useBank';
 import { fuelRemaining, groceryRemainingMinor } from '@shared/domain/forecast.ts';
 import { projectEndOfMonth } from '@shared/domain/projection.ts';
+import { vaultTotals } from '@shared/domain/savings.ts';
 
 export function useTransactions(): ClassifiedTransaction[] {
   const { data } = useStore();
@@ -95,7 +96,9 @@ export function useProjection() {
       coverageFrom: quality.coverageFrom,
       forecastRemaining,
       fixedItems: data.fixedItems ?? [],
+      // Sommes déclarées dans le coffre : encore sur le compte, mais plus disponibles.
+      reservedMinor: Math.max(0, vaultTotals(data.entries)[cur]?.declaredMinor ?? 0),
     });
     return { ...projection, fuelLeft, accounts: used.length, lastSyncAt: bank.connections.map((c) => c.lastSyncAt).filter(Boolean).sort()[0] ?? null };
-  }, [data.profile.currency, data.forecast, data.fixedItems, bank.accounts, bank.connections, txs, quality.coverageFrom, today]);
+  }, [data.profile.currency, data.forecast, data.fixedItems, data.entries, bank.accounts, bank.connections, txs, quality.coverageFrom, today]);
 }

@@ -141,3 +141,12 @@ test('par défaut : aucune opération devinée, seulement solde, entrées et sor
   assert.deepEqual(p.lines.map((l) => l.kind), ['fixed', 'forecast', 'forecast']);
   assert.equal(p.projectedMinor, 46800 - 49700 - 7600 - 4500);
 });
+
+test('le coffre : les sommes mises de côté sont retirées de la prévision', () => {
+  const sans = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 46800, currency: 'EUR', transactions: [], coverageFrom: null });
+  const avec = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 46800, currency: 'EUR', transactions: [], coverageFrom: null, reservedMinor: 10000 });
+  assert.equal(avec.projectedMinor, sans.projectedMinor - 10000);
+  assert.deepEqual(avec.lines[0], { kind: 'reserved', label: 'Mis de côté dans le coffre', amountMinor: -10000 });
+  // Coffre vide ou négatif : aucune ligne.
+  assert.equal(projectEndOfMonth({ today: '2026-10-15', balanceMinor: 1, currency: 'EUR', transactions: [], coverageFrom: null, reservedMinor: 0 }).lines.length, 0);
+});

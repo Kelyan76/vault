@@ -12,7 +12,7 @@ import { addDays, diffDays, endOfMonth, startOfMonth, type DateStr } from './dat
 //   − autres dépenses courantes : moyenne par jour × jours restants
 // Ce n'est qu'une estimation : elle repose sur les mois précédents complets.
 
-export type ProjectionLineKind = 'income' | 'recurring' | 'fixed' | 'forecast' | 'variable';
+export type ProjectionLineKind = 'income' | 'recurring' | 'fixed' | 'forecast' | 'variable' | 'reserved';
 
 /** Entrée ou sortie fixe déclarée par l'utilisateur (loyer, APL…), au jour près chaque mois. */
 export interface FixedItem {
@@ -68,6 +68,11 @@ export interface ProjectionInput {
    * et les prévisions courses et carburant.
    */
   useHistory?: boolean;
+  /**
+   * Argent mis de côté dans le coffre (sommes déclarées) : il est encore sur le compte mais n'est plus
+   * disponible, donc retiré de la prévision. Les virements réels vers l'épargne ont déjà quitté le compte.
+   */
+  reservedMinor?: number;
 }
 
 export interface Projection {
@@ -205,6 +210,8 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
     const variable = Math.round((total / refDays) * daysLeft);
     if (variable > 0) lines.push({ kind: 'variable', label: `Autres dépenses courantes (${daysLeft} j)`, amountMinor: -variable });
   }
+
+  if ((input.reservedMinor ?? 0) > 0) lines.unshift({ kind: 'reserved', label: 'Mis de côté dans le coffre', amountMinor: -input.reservedMinor! });
 
   const projected = input.balanceMinor + lines.reduce((s, l) => s + l.amountMinor, 0);
   return { balanceMinor: input.balanceMinor, projectedMinor: projected, endOfMonth: monthEnd, daysLeft, referenceMonths: refMonths.length, lines };

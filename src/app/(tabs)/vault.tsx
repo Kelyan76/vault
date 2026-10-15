@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { estimatedSaving, savingsTransferSuggestions, vaultStage, vaultTotals } from '@shared/domain/savings.ts';
-import { confirmSavingsTransfer } from '@/store/actions';
+import { confirmSavingsTransfer, emptyVault } from '@/store/actions';
 import { useGoals, useTransactions } from '@/store/hooks';
 import { useStore } from '@/store/store';
 import { GOAL_ICONS } from '@/features/vault/goalIcons';
@@ -11,13 +11,14 @@ import { Screen, EmptyState, Notice } from '@/ui/layout';
 import { IconBubble } from '@/ui/Icon';
 import { Button, Card, Pill, ProgressBar, Row, SectionTitle, T } from '@/ui/primitives';
 import { money, shortDate } from '@/ui/format';
-import { colors, space } from '@/theme/tokens';
+import { colors, radius, space } from '@/theme/tokens';
 
 export default function Vault() {
   const { data, act } = useStore();
   const goals = useGoals();
   const txs = useTransactions();
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   const cur = data.profile.currency;
   const totals = vaultTotals(data.entries)[cur] ?? { declaredMinor: 0, observedMinor: 0 };
   const suggestions = useMemo(() => savingsTransferSuggestions(txs, data.entries).slice(0, 3), [txs, data.entries]);
@@ -40,6 +41,35 @@ export default function Vault() {
           <Button label="Mettre de côté" icon="coin" onPress={() => router.push('/savings/new')} style={{ flex: 1 }} />
           <Button kind="secondary" label="Objectif" icon="plus" onPress={() => router.push('/goals/new')} style={{ flex: 1 }} />
         </Row>
+        <T v="small" color={colors.textMuted} center>
+          Ce que tu mets de côté ici est retiré de ta prévision de fin de mois : tu vois ce qu’il te reste vraiment.
+        </T>
+        {totals.declaredMinor + totals.observedMinor > 0 ? (
+          confirmEmpty ? (
+            <View style={{ alignSelf: 'stretch', gap: space.sm, backgroundColor: colors.alertSoft, borderRadius: radius.md, padding: space.md }}>
+              <T v="bodyStrong">Vider le coffre ?</T>
+              <T v="small">
+                Le coffre et tes objectifs reviennent à 0 €. Les {money(totals.declaredMinor + totals.observedMinor, cur)} redeviennent disponibles dans ta prévision. L’historique est conservé.
+              </T>
+              <Row>
+                <Button small kind="secondary" label="Annuler" onPress={() => setConfirmEmpty(false)} style={{ flex: 1 }} />
+                <Button
+                  small
+                  kind="danger"
+                  label="Vider"
+                  icon="trash"
+                  onPress={() => {
+                    setMsg(act((d, env) => emptyVault(d, env)));
+                    setConfirmEmpty(false);
+                  }}
+                  style={{ flex: 1 }}
+                />
+              </Row>
+            </View>
+          ) : (
+            <Button small kind="ghost" label="Vider le coffre" icon="trash" onPress={() => setConfirmEmpty(true)} />
+          )
+        ) : null}
       </Card>
 
       {msg ? <View style={{ marginTop: space.md }}><Notice tone="alert" text={msg} /></View> : null}

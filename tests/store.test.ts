@@ -177,3 +177,16 @@ test('défis : score partagé = actions, jamais de montant ; partage désactivab
   d = A.refreshMyScores(d, env()).data;
   assert.equal(d.challenges.at(-1)!.participants.find((p) => p.userId === 'me')!.sharedScore, 0);
 });
+
+test('vider le coffre : total et objectifs à 0, historique conservé, puis plus rien à vider', () => {
+  let d = emptyUserData('2026-10-01T00:00:00Z', '2026-10-14');
+  d = A.createGoal(d, { name: 'Voyage', targetMinor: 50000, icon: 'plane' }, env()).data;
+  d = A.addSavingsEntry(d, { amountMinor: 5000, allocations: [{ goalId: d.goals[0].id, amountMinor: 3000 }], date: '2026-10-14' }, env()).data;
+  d = A.addSavingsEntry(d, { amountMinor: 2000, allocations: [], date: '2026-10-14' }, env()).data;
+  const r = A.emptyVault(d, env());
+  assert.equal(r.error, undefined);
+  assert.equal(r.data.entries.reduce((s, e) => s + e.amountMinor, 0), 0);
+  assert.equal(goalsProgress(r.data)[0].savedMinor, 0);
+  assert.equal(r.data.entries.length, 3);
+  assert.match(A.emptyVault(r.data, env()).error!, /déjà vide/);
+});
