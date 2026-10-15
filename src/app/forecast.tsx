@@ -154,7 +154,7 @@ export default function Forecast() {
           </Row>
           <T v="small" color={colors.textMuted}>
             {proj.referenceMonths
-              ? `Estimation : prélèvements et revenus réguliers repérés sur ${proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : 'ton dernier mois complet'}, autres dépenses au prorata des jours restants${data.forecast ? ', courses et carburant selon ta prévision enregistrée' : ''}. Les opérations en attente ne sont pas encore dans ton solde.`
+              ? `Estimation sans aucune rentrée d’argent à venir (ni salaire, ni virement reçu) : prélèvements réguliers repérés sur ${proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : 'ton dernier mois complet'}, autres dépenses au prorata des jours restants${data.forecast ? ', courses et carburant selon ta prévision enregistrée' : ''}. Les opérations en attente ne sont pas encore dans ton solde.`
               : 'Historique trop court pour repérer tes opérations régulières : la prévision s’affinera après un mois complet de données.'}
           </T>
         </Card>

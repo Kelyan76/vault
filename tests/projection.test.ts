@@ -46,7 +46,7 @@ test('fin de mois : régulières à venir, déjà passées exclues, autres dépe
 
 test('le jour du mois compte : au 2 octobre, salaire et loyer sont encore à venir', () => {
   const rows = history().filter((t) => t.date < '2026-10-01');
-  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01' });
+  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01', includeIncome: true });
   // Le salaire (le 1er) a un jour de retard : il est encore attendu (tolérance de 3 jours).
   const income = p.lines.find((l) => l.kind === 'income');
   assert.equal(income?.amountMinor, 165000);
@@ -91,4 +91,13 @@ test('un seul mois de recul : loyer, abonnements et salaire restent réguliers, 
   assert.ok(!p.lines.some((l) => l.kind === 'income'));
   // Seule la pizza est étalée : 30 € sur 30 jours, x 16 jours.
   assert.equal(p.lines.find((l) => l.kind === 'variable')!.amountMinor, -1600);
+});
+
+test('par défaut, aucune rentrée d’argent n’est anticipée (ni salaire, ni virement reçu)', () => {
+  const rows = history().filter((t) => t.date < '2026-10-01');
+  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01' });
+  assert.ok(p.lines.every((l) => l.amountMinor < 0));
+  assert.ok(!p.lines.some((l) => l.kind === 'income'));
+  // Le loyer à venir reste bien déduit.
+  assert.ok(p.lines.some((l) => l.label === 'PRLV LOYER APPARTEMENT'));
 });

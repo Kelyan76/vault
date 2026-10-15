@@ -102,7 +102,7 @@ function HeroCard() {
           </View>
         </View>
         <T v="tiny" color={colors.onColor} style={{ opacity: 0.75 }}>
-          AU {shortDate(today).toUpperCase()} · {p.referenceMonths ? 'ESTIMATION SUR TES MOIS PRÉCÉDENTS' : 'HISTORIQUE TROP COURT, ESTIMATION PARTIELLE'}
+          AU {shortDate(today).toUpperCase()} · {p.referenceMonths ? 'SANS SALAIRE NI VIREMENT À VENIR' : 'HISTORIQUE TROP COURT, ESTIMATION PARTIELLE'}
         </T>
       </View>
     </Pressable>

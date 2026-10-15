@@ -5,7 +5,8 @@ import { addDays, diffDays, endOfMonth, startOfMonth, type DateStr } from './dat
 // Solde prévu à la fin du mois, à partir du solde actuel et de la date du jour.
 // Méthode transparente, détaillée ligne par ligne pour l'utilisateur :
 //   solde actuel
-//   + revenus réguliers pas encore reçus ce mois-ci
+//   (+ revenus réguliers pas encore reçus, seulement si includeIncome : désactivé par défaut,
+//    pour montrer ce qui reste AVANT la prochaine paie, sans compter les virements reçus)
 //   − prélèvements réguliers pas encore passés ce mois-ci
 //   − reste de la prévision courses / carburant (prévision du mois − déjà dépensé)
 //   − autres dépenses courantes : moyenne par jour × jours restants
@@ -31,6 +32,8 @@ export interface ProjectionInput {
   coverageFrom: DateStr | null;
   /** Prévision mensuelle de l'outil Prévisions, si l'utilisateur l'a enregistrée. */
   forecast?: { groceriesMonthlyMinor: number; fuelMonthlyMinor: number } | null;
+  /** Compter les revenus réguliers attendus (salaire…). Par défaut non : aucune rentrée d'argent n'est anticipée. */
+  includeIncome?: boolean;
 }
 
 export interface Projection {
@@ -103,7 +106,7 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
     if (!ref) continue;
     if (t.classified.kind === 'refund') continue;
     if (t.amountMinor < 0 && forecastCats.has(t.classified.category)) continue;
-    if (t.amountMinor > 0 && t.classified.kind !== 'income') continue;
+    if (t.amountMinor > 0 && (t.classified.kind !== 'income' || !input.includeIncome)) continue;
     const sign: 1 | -1 = t.amountMinor > 0 ? 1 : -1;
     const key = `${sign}:${recurringKey(t.label)}`;
     if (key.length < 4) continue;
