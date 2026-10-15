@@ -1,27 +1,43 @@
 import { router } from 'expo-router';
-import * as Linking from 'expo-linking';
-import * as WebBrowser from 'expo-web-browser';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { DEMO_INSTITUTION } from '@shared/banking/demo.ts';
 import { connectDemoBank } from '@/store/actions';
 import { useStore } from '@/store/store';
 import { useBank } from '@/features/bank/useBank';
+import { bankReturnUrl, openProviderFlow } from '@/features/bank/openProvider';
 import { BENEFITS, CONSENT_VERSION, DATA_ACCESSED, DATA_NOT_ACCESSED } from '@/features/bank/consent';
 import { callFunction, BackendError } from '@/lib/supabase';
 import { EmptyArt } from '@/art/EmptyArt';
 import { Screen, Notice } from '@/ui/layout';
 import { Icon, IconBubble } from '@/ui/Icon';
-import { Button, Card, Pill, Row, SectionTitle, T } from '@/ui/primitives';
+import { Button, Card, Field, Pill, Row, SectionTitle, T } from '@/ui/primitives';
 import { colors, radius, space } from '@/theme/tokens';
 
 export default function ConnectBank() {
   const bank = useBank();
   const { act } = useStore();
   const [consent, setConsent] = useState(false);
-  const [step, setStep] = useState<'intro' | 'demo-provider'>('intro');
+  const [step, setStep] = useState<'intro' | 'demo-provider' | 'pick-bank'>('intro');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [banks, setBanks] = useState<{ name: string; country: string }[]>([]);
+  const [query, setQuery] = useState('');
+  const shownBanks = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return banks.filter((b) => !q || b.name.toLowerCase().includes(q)).slice(0, 60);
+  }, [banks, query]);
+
+  function explain(e: unknown) {
+    const code = e instanceof BackendError ? e.code : 'unknown';
+    setError(
+      code === 'provider_not_configured'
+        ? 'Le prestataire bancaire n’est pas encore configuré sur le serveur VAULT (identifiants fournisseur manquants). La connexion réelle est bloquée pour l’instant.'
+        : code === 'too_many_attempts'
+          ? 'Trop de tentatives en une heure. Réessaie un peu plus tard.'
+          : 'Impossible de lancer le parcours sécurisé. Vérifie ta connexion et réessaie.',
+    );
+  }
 
   async function launch() {
     setError(null);
@@ -29,27 +45,70 @@ export default function ConnectBank() {
     if (bank.source !== 'server') return;
     setBusy(true);
     try {
-      const { url } = await callFunction<{ url: string }>('bank-connect', { consentAccepted: true, consentVersion: CONSENT_VERSION });
-      const returnUrl = Linking.createURL('/bank/callback');
-      const res = await WebBrowser.openAuthSessionAsync(url, returnUrl);
+      // Avec Enable Banking, la banque se choisit dans VAULT ; Bridge affiche son propre sélecteur.
+      const r = await callFunction<{ institutions: { name: string; country: string }[]; pickInProvider: boolean }>('bank-institutions', { country: 'FR' });
+      if (r.pickInProvider) return await connect(null);
+      setBanks(r.institutions);
+      setStep('pick-bank');
+    } catch (e) {
+      explain(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connect(institution: { name: string; country: string } | null) {
+    setError(null);
+    setBusy(true);
+    try {
+      const returnUrl = bankReturnUrl();
+      const { url } = await callFunction<{ url: string }>('bank-connect', { consentAccepted: true, consentVersion: CONSENT_VERSION, institution, returnUrl });
+      const res = await openProviderFlow(url, returnUrl);
+      if (res.type === 'redirected') return;
       if (res.type === 'success') {
-        const params = Linking.parse(res.url).queryParams ?? {};
-        router.replace({ pathname: '/bank/callback', params: params as Record<string, string> });
+        router.replace({ pathname: '/bank/callback', params: res.params });
       } else {
         setError('Parcours interrompu. Aucune connexion n’a été créée ; tu peux réessayer quand tu veux.');
       }
     } catch (e) {
-      const code = e instanceof BackendError ? e.code : 'unknown';
-      setError(
-        code === 'provider_not_configured'
-          ? 'Le prestataire bancaire n’est pas encore configuré sur le serveur VAULT (identifiants fournisseur manquants). La connexion réelle est bloquée pour l’instant.'
-          : code === 'too_many_attempts'
-            ? 'Trop de tentatives en une heure. Réessaie un peu plus tard.'
-            : 'Impossible de lancer le parcours sécurisé. Vérifie ta connexion et réessaie.',
-      );
+      explain(e);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (step === 'pick-bank') {
+    return (
+      <Screen back title="Choisis ta banque" subtitle="Tu seras ensuite redirigé vers le site de ta banque pour autoriser l’accès.">
+        <Field label="Rechercher" value={query} onChangeText={setQuery} placeholder="ex. Crédit Agricole" autoCorrect={false} />
+        {error ? <View style={{ marginTop: space.sm }}><Notice tone="alert" text={error} /></View> : null}
+        <Card style={{ marginTop: space.md, paddingVertical: space.xs }}>
+          {shownBanks.length === 0 ? (
+            <T color={colors.textMuted} style={{ paddingVertical: space.sm }}>
+              Aucune banque ne correspond à cette recherche.
+            </T>
+          ) : (
+            shownBanks.map((b) => (
+              <Pressable
+                key={`${b.country}-${b.name}`}
+                disabled={busy}
+                onPress={() => connect(b)}
+                accessibilityRole="button"
+                accessibilityLabel={b.name}
+                style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 }, pressed && { opacity: 0.6 }]}
+              >
+                <IconBubble name="bank" color={colors.habit} bg={colors.habitSoft} size={36} />
+                <T v="bodyStrong" style={{ flex: 1 }}>
+                  {b.name}
+                </T>
+                <Icon name="right" size={18} color={colors.textMuted} />
+              </Pressable>
+            ))
+          )}
+        </Card>
+        <Button kind="ghost" label="Retour" onPress={() => setStep('intro')} />
+      </Screen>
+    );
   }
 
   if (step === 'demo-provider') {

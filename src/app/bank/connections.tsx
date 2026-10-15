@@ -1,6 +1,4 @@
 import { router } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
 import { useState } from 'react';
 import { View } from 'react-native';
 import { STATUS_COPY } from '@shared/banking/status.ts';
@@ -8,6 +6,7 @@ import { disconnectDemoBank, syncDemoBank } from '@/store/actions';
 import { useStore } from '@/store/store';
 import { useBank, ACCOUNT_TYPE_LABELS, type BankConnectionView } from '@/features/bank/useBank';
 import { CONSENT_VERSION } from '@/features/bank/consent';
+import { bankReturnUrl, openProviderFlow } from '@/features/bank/openProvider';
 import { BackendError, callFunction } from '@/lib/supabase';
 import { Screen, EmptyState, ErrorState, LoadingState, Notice } from '@/ui/layout';
 import { IconBubble } from '@/ui/Icon';
@@ -56,8 +55,9 @@ function ConnectionCard({ c }: { c: BankConnectionView }) {
   async function renew() {
     setBusy(true);
     try {
-      const { url } = await callFunction<{ url: string }>('bank-connect', { consentAccepted: true, consentVersion: CONSENT_VERSION, connectionId: c.id });
-      const res = await WebBrowser.openAuthSessionAsync(url, Linking.createURL('/bank/callback'));
+      const returnUrl = bankReturnUrl();
+      const { url } = await callFunction<{ url: string }>('bank-connect', { consentAccepted: true, consentVersion: CONSENT_VERSION, connectionId: c.id, returnUrl });
+      const res = await openProviderFlow(url, returnUrl);
       if (res.type === 'success') bank.reload();
     } catch {
       setMsg({ tone: 'alert', text: 'Impossible d’ouvrir le parcours de renouvellement.' });

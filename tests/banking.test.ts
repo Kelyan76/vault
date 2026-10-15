@@ -214,3 +214,10 @@ test('banque de démonstration : déterministe et couvrant les cas limites', () 
 
 const _typecheck: StoredBankTransaction | null = null;
 void _typecheck;
+
+test('client Bridge : interprétation du retour du parcours', async () => {
+  const bridge = new BridgeProvider({ clientId: 'cid', clientSecret: 'sec', fetchImpl: (async () => new Response('{}')) as unknown as typeof fetch });
+  assert.deepEqual(await bridge.completeCallback(new URLSearchParams('success=true&item_id=42&context=x')), { ok: true, providerConnectionId: '42' });
+  assert.deepEqual(await bridge.completeCallback(new URLSearchParams('success=false&step=bank')), { ok: false, reason: 'cancelled' });
+  assert.deepEqual(await bridge.completeCallback(new URLSearchParams('success=true&item_id=../x')), { ok: false, reason: 'cancelled' });
+});

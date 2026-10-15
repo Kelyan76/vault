@@ -4,6 +4,7 @@
 // du parcours officiel du prestataire. VAULT ne voit jamais les identifiants bancaires.
 import { adminClient, configuredProvider, corsHeaders, env, getProvider, json, log, randomToken, readJson, requireUser } from '../_shared/server/context.ts';
 import { ProviderError } from '../_shared/banking/types.ts';
+import { parseOrigins, safeReturnUrl } from '../_shared/banking/return-url.ts';
 
 export const CONSENT_VERSION = '2026-10-14';
 
@@ -16,8 +17,13 @@ Deno.serve(async (req) => {
   const provider = getProvider();
   if (!provider) return json({ error: 'provider_not_configured', provider: configuredProvider() }, 503);
 
-  const body = await readJson<{ consentAccepted?: boolean; consentVersion?: string; connectionId?: string }>(req);
+  const body = await readJson<{ consentAccepted?: boolean; consentVersion?: string; connectionId?: string; institution?: { name?: unknown; country?: unknown }; returnUrl?: unknown }>(req);
   if (!body?.consentAccepted || body.consentVersion !== CONSENT_VERSION) return json({ error: 'consent_required' }, 400);
+  const inst = body.institution;
+  const institution =
+    inst && typeof inst.name === 'string' && inst.name.length > 0 && inst.name.length <= 120 && typeof inst.country === 'string' && /^[A-Z]{2}$/.test(inst.country)
+      ? { name: inst.name, country: inst.country }
+      : null;
 
   const db = adminClient();
   // Limite : 5 tentatives par heure et par utilisateur.
@@ -29,11 +35,15 @@ Deno.serve(async (req) => {
   if ((count ?? 0) >= 5) return json({ error: 'too_many_attempts' }, 429);
 
   let providerConnectionId: string | null = null;
+  let renewInstitution: { name: string; country: string } | null = null;
   if (body.connectionId) {
-    const { data: conn } = await db.from('bank_connections').select('provider_connection_id, user_id').eq('id', body.connectionId).maybeSingle();
+    const { data: conn } = await db.from('bank_connections').select('provider_connection_id, user_id, institution_name').eq('id', body.connectionId).maybeSingle();
     if (!conn || conn.user_id !== user.id) return json({ error: 'not_found' }, 404);
     providerConnectionId = conn.provider_connection_id;
+    // Enable Banking renouvelle en créant une nouvelle session auprès de la même banque.
+    if (conn.institution_name) renewInstitution = { name: conn.institution_name, country: institution?.country ?? 'FR' };
   }
+  if (provider.listInstitutions && !institution && !renewInstitution) return json({ error: 'institution_required' }, 400);
 
   try {
     const { data: existing } = await db.from('bank_provider_users').select('provider_user_id').eq('user_id', user.id).eq('provider', provider.id).maybeSingle();
@@ -48,6 +58,7 @@ Deno.serve(async (req) => {
       provider: provider.id,
       connection_id: body.connectionId ?? null,
       consent_version: CONSENT_VERSION,
+      return_url: safeReturnUrl(body.returnUrl, parseOrigins(Deno.env.get('ALLOWED_RETURN_ORIGINS'))),
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
     });
     const session = await provider.createConnectSession({
@@ -57,6 +68,7 @@ Deno.serve(async (req) => {
       callbackUrl: `${env('SUPABASE_URL')}/functions/v1/bank-callback`,
       state,
       providerConnectionId,
+      institution: institution ?? renewInstitution,
     });
     await db.rpc('audit', { p_user: user.id, p_action: 'bank.connect_started', p_target: provider.id, p_meta: {} });
     log('bank_connect_started', { provider: provider.id });

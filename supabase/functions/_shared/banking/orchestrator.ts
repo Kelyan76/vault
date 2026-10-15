@@ -1,3 +1,4 @@
+import { addDays } from '../domain/dates.ts';
 import { mergeTransactions, nextSinceCursor, collectPages, type StoredBankTransaction } from './sync.ts';
 import { isHealthy } from './status.ts';
 import { ProviderError, type BankingProvider, type ConnectionStatus, type ProviderAccount } from './types.ts';
@@ -23,6 +24,8 @@ export interface SyncRepository {
   updateConnection(id: string, patch: Partial<{ status: ConnectionStatus; providerStatusCode: string | null; consentExpiresAt: string | null; lastSuccessfulSyncAt: string | null; syncCursor: string | null; institutionName: string | null }>): Promise<void>;
   upsertAccounts(connection: ConnectionRecord, accounts: ProviderAccount[], now: string): Promise<void>;
   loadTransactions(connectionId: string, providerTransactionIds: string[]): Promise<StoredBankTransaction[]>;
+  /** Opérations en attente non retirées d'une période (réconciliation pour les prestataires sans signal de suppression). */
+  loadPendingInWindow(connectionId: string, from: string, to: string): Promise<StoredBankTransaction[]>;
   saveTransactions(connection: ConnectionRecord, rows: StoredBankTransaction[]): Promise<void>;
   countFailures(connectionId: string): Promise<number>;
 }
@@ -72,15 +75,32 @@ export async function runSync(
     await repo.upsertAccounts(conn, accounts, nowIso);
     const accountIds = new Set(accounts.filter((a) => a.dataAccess).map((a) => a.providerAccountId));
 
-    const minDate = conn.syncCursor ? null : new Date(deps.now().getTime() - INITIAL_HISTORY_DAYS * 86_400_000).toISOString().slice(0, 10);
-    const pages = await collectPages((cursor) => provider.listTransactions(providerUserId, { since: conn.syncCursor, cursor, minDate }));
+    const today = nowIso.slice(0, 10);
+    const minDate = conn.syncCursor ? null : addDays(today, -INITIAL_HISTORY_DAYS);
+    const pages = await collectPages((cursor) =>
+      provider.listTransactions(providerUserId, { since: conn.syncCursor, cursor, minDate, providerConnectionId: conn.providerConnectionId, accountIds: [...accountIds] }),
+    );
     // Les transactions de l'utilisateur chez le prestataire peuvent concerner d'autres connexions : on ne garde que celles-ci.
     const incoming = pages.transactions.filter((t) => accountIds.has(t.providerAccountId));
-    const existing = await repo.loadTransactions(conn.id, [...new Set(incoming.map((t) => t.providerTransactionId))]);
-    const merge = mergeTransactions(existing, incoming, { now: nowIso, makeId: deps.makeId });
+    let existing = await repo.loadTransactions(conn.id, [...new Set(incoming.map((t) => t.providerTransactionId))]);
+    // Prestataire sans signal de suppression : la période relue en entier sert de référence
+    // (même fenêtre que celle demandée par l'adaptateur : 10 jours avant le curseur, ou l'historique initial).
+    let fullWindow: { from: string; to: string } | null = null;
+    if (!provider.reportsDeletions && pages.complete) {
+      fullWindow = { from: conn.syncCursor ? addDays(conn.syncCursor.slice(0, 10), -10) : minDate!, to: today };
+      const pending = await repo.loadPendingInWindow(conn.id, fullWindow.from, fullWindow.to);
+      const known = new Set(existing.map((t) => t.providerTransactionId));
+      existing = [...existing, ...pending.filter((t) => accountIds.has(t.providerAccountId) && !known.has(t.providerTransactionId))];
+    }
+    const merge = mergeTransactions(existing, incoming, { now: nowIso, makeId: deps.makeId, fullWindow });
     await repo.saveTransactions(conn, [...merge.inserts, ...merge.updates, ...merge.removals]);
 
-    const cursor = pages.complete ? nextSinceCursor(conn.syncCursor, incoming) : conn.syncCursor;
+    // Curseur : date de mise à jour côté prestataire si elle existe, sinon date de cette synchronisation.
+    const cursor = !pages.complete
+      ? conn.syncCursor
+      : provider.reportsDeletions
+        ? nextSinceCursor(conn.syncCursor, incoming)
+        : nowIso;
     await repo.updateConnection(conn.id, { status: 'connected', lastSuccessfulSyncAt: nowIso, syncCursor: cursor });
     await repo.finishSync(jobId, { status: 'succeeded', inserted: merge.inserts.length, updated: merge.updates.length, removed: merge.removals.length });
     return { kind: 'succeeded', inserted: merge.inserts.length, updated: merge.updates.length, removed: merge.removals.length, status: 'connected' };

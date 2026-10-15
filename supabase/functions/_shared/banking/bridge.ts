@@ -4,6 +4,7 @@ import { bridgeItemStatus } from './status.ts';
 import {
   ProviderError,
   type BankingProvider,
+  type CallbackResult,
   type ConnectSessionRequest,
   type ProviderAccount,
   type ProviderConnection,
@@ -112,6 +113,10 @@ export function mapBridgeAccount(a: BridgeAccount): ProviderAccount {
 
 export class BridgeProvider implements BankingProvider {
   readonly id = 'bridge' as const;
+  /** Bridge renvoie les opérations supprimées avec `deleted: true`. */
+  readonly reportsDeletions = true;
+  /** Bridge renvoie notre `state` dans le paramètre `context`. */
+  readonly stateParam = 'context';
   private readonly cfg: Required<Omit<BridgeConfig, 'fetchImpl' | 'now'>> & { fetchImpl: typeof fetch; now: () => Date };
   private tokens = new Map<string, { token: string; expiresAt: number }>();
 
@@ -163,6 +168,12 @@ export class BridgeProvider implements BankingProvider {
     const res = await this.call<{ access_token: string; expires_at: string }>('POST', '/v3/aggregation/authorization/token', { body: { user_uuid: providerUserId } });
     this.tokens.set(providerUserId, { token: res.access_token, expiresAt: new Date(res.expires_at).getTime() });
     return res.access_token;
+  }
+
+  async completeCallback(params: URLSearchParams): Promise<CallbackResult> {
+    const itemId = params.get('item_id');
+    if (params.get('success') !== 'true' || !itemId || !/^\d+$/.test(itemId)) return { ok: false, reason: 'cancelled' };
+    return { ok: true, providerConnectionId: itemId };
   }
 
   async ensureUser(appUserId: string, existing?: string | null) {

@@ -12,7 +12,7 @@ Deno.serve(async (req) => {
   const provider = getProvider();
   if (!provider) return json({ error: 'provider_not_configured' }, 503);
   const db = adminClient();
-  const deps = { repo: supabaseSyncRepository(db, provider.id as 'bridge'), provider, now: () => new Date(), makeId: () => crypto.randomUUID() };
+  const deps = { repo: supabaseSyncRepository(db, provider.id as 'bridge' | 'enablebanking'), provider, now: () => new Date(), makeId: () => crypto.randomUUID() };
   const body = await readJson<{ connectionId?: string; scheduled?: boolean }>(req);
 
   const bearer = req.headers.get('authorization')?.replace(/^Bearer /, '') ?? '';

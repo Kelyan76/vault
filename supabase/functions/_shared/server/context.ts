@@ -1,6 +1,7 @@
 // Outils communs aux Edge Functions (Deno). Ne jamais journaliser de jeton, de secret ni de donnée financière.
 import { createClient, type SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { BridgeProvider } from '../banking/bridge.ts';
+import { EnableBankingProvider } from '../banking/enablebanking.ts';
 import type { BankingProvider } from '../banking/types.ts';
 
 export const corsHeaders = {
@@ -37,11 +38,12 @@ export async function requireUser(req: Request): Promise<{ id: string; email: st
   return { id: data.user.id, email: data.user.email ?? null };
 }
 
-export type ConfiguredProvider = 'bridge' | 'powens' | 'none';
+export type ConfiguredProvider = 'bridge' | 'powens' | 'enablebanking' | 'none';
 
 export function configuredProvider(): ConfiguredProvider {
   const p = Deno.env.get('BANKING_PROVIDER') ?? 'none';
   if (p === 'bridge' && Deno.env.get('BRIDGE_CLIENT_ID') && Deno.env.get('BRIDGE_CLIENT_SECRET')) return 'bridge';
+  if (p === 'enablebanking' && Deno.env.get('ENABLE_BANKING_APP_ID') && Deno.env.get('ENABLE_BANKING_PRIVATE_KEY')) return 'enablebanking';
   if (p === 'powens') return 'powens';
   return 'none';
 }
@@ -51,6 +53,8 @@ export function getProvider(): BankingProvider | null {
   switch (configuredProvider()) {
     case 'bridge':
       return new BridgeProvider({ clientId: env('BRIDGE_CLIENT_ID'), clientSecret: env('BRIDGE_CLIENT_SECRET') });
+    case 'enablebanking':
+      return new EnableBankingProvider({ applicationId: env('ENABLE_BANKING_APP_ID'), privateKeyPem: env('ENABLE_BANKING_PRIVATE_KEY') });
     case 'powens':
       // L'adaptateur Powens n'est pas encore implémenté : voir docs/BANKING_PROVIDERS.md.
       return null;

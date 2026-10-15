@@ -4,7 +4,7 @@ import type { StoredBankTransaction } from '../banking/sync.ts';
 import type { ProviderAccount } from '../banking/types.ts';
 
 /** Implémentation Postgres du dépôt de synchronisation (clé service_role). */
-export function supabaseSyncRepository(db: SupabaseClient, provider: 'bridge' | 'powens'): SyncRepository {
+export function supabaseSyncRepository(db: SupabaseClient, provider: 'bridge' | 'powens' | 'enablebanking'): SyncRepository {
   const accountMap = new Map<string, string>(); // provider_account_id -> id interne
 
   async function ensureAccountMap(connectionId: string) {
@@ -13,7 +13,37 @@ export function supabaseSyncRepository(db: SupabaseClient, provider: 'bridge' | 
     for (const a of data ?? []) accountMap.set(a.provider_account_id, a.id);
   }
 
+  const SELECT = 'id, provider_transaction_id, provider_account_id, booking_date, label, amount_minor, currency, provider_category, operation_type, status, removed, provider_updated_at, synced_at';
+  // deno-lint-ignore no-explicit-any
+  const toStored = (t: any): StoredBankTransaction => ({
+    id: t.id,
+    providerTransactionId: t.provider_transaction_id,
+    providerAccountId: t.provider_account_id,
+    date: t.booking_date,
+    label: t.label,
+    amountMinor: Number(t.amount_minor),
+    currency: t.currency,
+    providerCategory: t.provider_category,
+    operationType: t.operation_type,
+    status: t.status,
+    removed: t.removed,
+    providerUpdatedAt: t.provider_updated_at,
+    syncedAt: t.synced_at,
+  });
+
   return {
+    async loadPendingInWindow(connectionId, from, to) {
+      const { data, error } = await db
+        .from('bank_transactions')
+        .select(SELECT)
+        .eq('connection_id', connectionId)
+        .eq('status', 'pending')
+        .eq('removed', false)
+        .gte('booking_date', from)
+        .lte('booking_date', to);
+      if (error) throw new Error('load_pending');
+      return (data ?? []).map(toStored);
+    },
     async getConnection(id) {
       const { data } = await db
         .from('bank_connections')

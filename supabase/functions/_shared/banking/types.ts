@@ -15,7 +15,7 @@ export const CONNECTION_STATUSES = [
 
 export type ConnectionStatus = (typeof CONNECTION_STATUSES)[number];
 
-export type ProviderId = 'bridge' | 'powens' | 'demo';
+export type ProviderId = 'bridge' | 'powens' | 'enablebanking' | 'demo';
 
 export interface ProviderConnection {
   providerConnectionId: string;
@@ -71,7 +71,18 @@ export interface ConnectSessionRequest {
   state: string;
   /** Connexion existante à réparer ou renouveler. */
   providerConnectionId?: string | null;
+  /** Banque choisie dans VAULT, pour les prestataires qui ne proposent pas leur propre sélecteur. */
+  institution?: { name: string; country: string } | null;
 }
+
+export interface Institution {
+  name: string;
+  country: string;
+  logo: string | null;
+}
+
+/** Résultat du retour du parcours prestataire (paramètres d'URL déjà validés côté serveur). */
+export type CallbackResult = { ok: true; providerConnectionId: string } | { ok: false; reason: 'cancelled' | 'error' };
 
 /**
  * Contrat interne : les écrans, les quêtes et le moteur de transactions ne dépendent que de lui.
@@ -79,12 +90,26 @@ export interface ConnectSessionRequest {
  */
 export interface BankingProvider {
   readonly id: ProviderId;
+  /**
+   * Le prestataire signale-t-il lui-même les opérations supprimées ? Sinon, la fenêtre relue est
+   * réconciliée : une opération en attente qui n'y figure plus est marquée retirée.
+   */
+  readonly reportsDeletions: boolean;
+  /** Paramètre d'URL qui porte notre `state` au retour du parcours. */
+  readonly stateParam: string;
+  /** Interprète le retour du parcours (ex. échange d'un code contre une session). */
+  completeCallback(params: URLSearchParams, providerUserId: string): Promise<CallbackResult>;
+  /** Banques disponibles, si le choix se fait dans VAULT. */
+  listInstitutions?(country: string): Promise<Institution[]>;
   ensureUser(appUserId: string, existingProviderUserId?: string | null): Promise<{ providerUserId: string }>;
   createConnectSession(req: ConnectSessionRequest): Promise<{ url: string; sessionId: string | null }>;
   getConnection(providerUserId: string, providerConnectionId: string): Promise<ProviderConnection>;
   listAccounts(providerUserId: string, providerConnectionId: string): Promise<ProviderAccount[]>;
   /** Une page de transactions ; `since` = synchronisation incrémentale (date de mise à jour). */
-  listTransactions(providerUserId: string, opts: { since?: string | null; cursor?: string | null; minDate?: DateStr | null }): Promise<TransactionPage>;
+  listTransactions(
+    providerUserId: string,
+    opts: { since?: string | null; cursor?: string | null; minDate?: DateStr | null; providerConnectionId?: string; accountIds?: string[] },
+  ): Promise<TransactionPage>;
   deleteConnection(providerUserId: string, providerConnectionId: string): Promise<void>;
   deleteUser(providerUserId: string): Promise<void>;
 }

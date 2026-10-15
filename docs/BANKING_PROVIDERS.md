@@ -21,6 +21,14 @@ Recherche effectuée le **14 octobre 2026** dans les documentations officielles 
 | Sandbox | « Demo Bank » (id 574), scénarios d'erreur par identifiant (`otp`, `402`, `429`, `1003`, `success.1009`…) | Connecteurs de test (page dédiée) |
 | Coûts | Non publics | Non publics |
 
+## Usage personnel gratuit : Enable Banking (ajouté le 15 octobre 2026)
+
+En mode « restreint », une application Enable Banking de type production n'accède qu'aux comptes reliés par son propriétaire, pour un usage individuel non commercial. C'est la voie retenue pour tester VAULT avec de vraies données sans frais. GoCardless Bank Account Data (ex-Nordigen) n'accepte plus d'inscriptions depuis juillet 2025.
+
+Adaptateur : `supabase/functions/_shared/banking/enablebanking.ts` (JWT RS256 avec la clé privée de l'application, `kid` = identifiant de l'application). Particularités gérées : pas d'utilisateur côté prestataire (la session est la connexion), choix de la banque dans VAULT (`GET /aspsps`), transactions lues compte par compte avec `continuation_key`, pas de signal de suppression (les opérations en attente disparues sont retirées par réconciliation de la période relue), identifiant de repli stable quand la banque n'en fournit pas, pas de webhooks documentés (synchro à l'ouverture et planifiée).
+
+Sources : https://enablebanking.com/docs/api/reference/ · https://enablebanking.com/docs/api/linked-accounts/ · https://enablebanking.com/terms
+
 ## Choix pour l'implémentation : Bridge, en premier adaptateur
 
 Raison : c'est la documentation v3 la plus complète que nous ayons pu **vérifier** pour l'ensemble du cycle (utilisateur → jeton → session → comptes → transactions incrémentales → suppression → webhooks signés), avec une sandbox qui simule les cas d'erreur. Ce n'est **pas** un choix commercial définitif : il dépend des tarifs, de la couverture réelle et des conditions contractuelles.

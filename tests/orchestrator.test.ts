@@ -34,6 +34,7 @@ function memoryRepo(conn: Partial<ConnectionRecord> = {}) {
       state.accounts = a;
     },
     loadTransactions: async (_c, ids) => ids.map((i) => state.txs.get(i)).filter((x): x is StoredBankTransaction => !!x),
+    loadPendingInWindow: async (_c, from, to) => [...state.txs.values()].filter((t) => t.status === 'pending' && !t.removed && t.date >= from && t.date <= to),
     saveTransactions: async (_c, rows) => {
       for (const r of rows) state.txs.set(r.providerTransactionId, r);
     },
@@ -49,10 +50,13 @@ const ptx = (id: string, account = 'a1', extra: Partial<ProviderTransaction> = {
   providerTransactionId: id, providerAccountId: account, date: '2026-10-10', label: 'LIDL', amountMinor: -100, currency: 'EUR', providerCategory: null, operationType: null, status: 'booked', deleted: false, providerUpdatedAt: '2026-10-10T10:00:00Z', ...extra,
 });
 
-function fakeProvider(opts: { status?: ConnectionStatus; pages?: ProviderTransaction[][]; fail?: ProviderError; accounts?: ProviderAccount[] } = {}) {
-  const calls: { since?: string | null; minDate?: string | null; cursor?: string | null }[] = [];
+function fakeProvider(opts: { status?: ConnectionStatus; pages?: ProviderTransaction[][]; fail?: ProviderError; accounts?: ProviderAccount[]; reportsDeletions?: boolean } = {}) {
+  const calls: { since?: string | null; minDate?: string | null; cursor?: string | null; accountIds?: string[] }[] = [];
   const provider: BankingProvider = {
     id: 'bridge',
+    reportsDeletions: opts.reportsDeletions ?? true,
+    stateParam: 'context',
+    completeCallback: async () => ({ ok: true, providerConnectionId: 'item1' }),
     ensureUser: async () => ({ providerUserId: 'pu1' }),
     createConnectSession: async () => ({ url: 'https://example.test', sessionId: null }),
     getConnection: async () => {
@@ -137,4 +141,19 @@ test('verrou : pas de synchronisation simultanée ; connexion révoquée : rien'
   const gone = memoryRepo({ status: 'disconnected', disconnectedAt: '2026-10-13T00:00:00Z' });
   assert.deepEqual(await runSync(deps(gone.repo, fakeProvider().provider), 'c1', 'webhook'), { kind: 'skipped', reason: 'disconnected' });
   assert.deepEqual(await runSync(deps(gone.repo, fakeProvider().provider), 'nope', 'webhook'), { kind: 'skipped', reason: 'not_found' });
+});
+
+test('prestataire sans signal de suppression : l’opération en attente disparue est retirée, le curseur avance à la date de synchro', async () => {
+  const { repo, state } = memoryRepo();
+  const first = fakeProvider({ reportsDeletions: false, pages: [[ptx('p1', 'a1', { status: 'pending', date: '2026-10-13' }), ptx('t1')]] });
+  await runSync(deps(repo, first.provider), 'c1', 'initial');
+  assert.deepEqual(first.calls[0].accountIds, ['a1']);
+  assert.equal(state.conn.syncCursor, '2026-10-14T12:00:00.000Z');
+  // Le lendemain, la banque ne renvoie plus l'opération en attente : elle est devenue définitive sous un autre identifiant.
+  const second = fakeProvider({ reportsDeletions: false, pages: [[ptx('b1', 'a1', { date: '2026-10-13' }), ptx('t1')]] });
+  const r = await runSync(deps(repo, second.provider), 'c1', 'manual');
+  assert.equal(r.kind === 'succeeded' && r.removed, 1);
+  assert.equal(state.txs.get('p1')?.removed, true);
+  assert.equal(state.txs.get('b1')?.removed, false);
+  assert.equal(second.calls[0].since, '2026-10-14T12:00:00.000Z');
 });

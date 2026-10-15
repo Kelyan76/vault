@@ -15,9 +15,14 @@ Deno.serve(async (req) => {
   const db = adminClient();
   const { data: providerUsers } = await db.from('bank_provider_users').select('provider, provider_user_id').eq('user_id', user.id);
   const provider = getProvider();
+  const { data: connections } = await db.from('bank_connections').select('provider, provider_connection_id').eq('user_id', user.id).is('disconnected_at', null);
   for (const pu of providerUsers ?? []) {
     if (!provider || provider.id !== pu.provider) return json({ error: 'provider_not_configured' }, 503);
     try {
+      // Fermer chaque connexion d'abord (indispensable chez Enable Banking, qui n'a pas d'objet « utilisateur »).
+      for (const c of (connections ?? []).filter((x) => x.provider === pu.provider)) {
+        await provider.deleteConnection(pu.provider_user_id, c.provider_connection_id);
+      }
       await provider.deleteUser(pu.provider_user_id);
     } catch {
       log('account_delete_provider_failed', { provider: pu.provider });
