@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { classifyAll } from '../supabase/functions/_shared/domain/aggregation.ts';
-import { actualMonthlyAverage, CAR_MODELS, fuelForecast, groceryForecast, validateFuel, validateGrocery } from '../supabase/functions/_shared/domain/forecast.ts';
+import { actualMonthlyAverage, CAR_MODELS, departmentPrefix, fuelForecast, fuelRemaining, groceryForecast, groceryRemainingMinor, TANK_BY_MODEL, validateFuel, validateGrocery, workDaysLeftInMonth } from '../supabase/functions/_shared/domain/forecast.ts';
 import { tx } from './helpers.ts';
 
 test('courses : foyer, niveau et repas pris dehors', () => {
@@ -41,4 +41,35 @@ test('moyenne réelle : mois complets couverts seulement, remboursements déduit
   // Juillet n'est pas couvert en entier : moyenne sur août et septembre = (200 + 350) / 2.
   assert.deepEqual(avg, { monthlyMinor: 27500, months: 2 });
   assert.deepEqual(actualMonthlyAverage(txs, 'groceries', 'EUR', '2026-10-15', null), { monthlyMinor: null, months: 0 });
+});
+
+test('reste du mois : jours de travail restants à partir de la date', () => {
+  // Jeudi 15 octobre 2026 : restent 16 jours, dont 11 jours ouvrés (ven. 16, puis 19-23 et 26-30) et 5 de week-end.
+  assert.equal(workDaysLeftInMonth('2026-10-15', 5), 11);
+  assert.equal(workDaysLeftInMonth('2026-10-15', 3), 11 * 3 / 5);
+  assert.equal(workDaysLeftInMonth('2026-10-15', 7), 16);
+  assert.equal(workDaysLeftInMonth('2026-10-31', 5), 0);
+  assert.equal(groceryRemainingMinor({ adults: 1, teens: 0, children: 0, babies: 0, level: 'equilibre', mealsOutPerWeek: 0 }, '2026-10-15'), Math.round(5000 * 16 / 7));
+});
+
+test('carburant restant : 30 km aller, jauge à moitié, réservoir de 40 L', () => {
+  const base = { kmOneWay: 30, workDaysPerWeek: 5, extraKmPerWeek: 0, carModelId: null, energy: 'sp95' as const, per100: 6, priceMinor: 217, tankCapacity: 40 };
+  const sansJauge = fuelRemaining(base, '2026-10-15');
+  // 11 jours x 60 km = 660 km, 39,6 L à acheter.
+  assert.deepEqual([sansJauge.kmLeft, sansJauge.unitsNeeded, sansJauge.unitsToBuy, sansJauge.costMinor], [660, 39.6, 39.6, Math.round(39.6 * 217)]);
+  const moitie = fuelRemaining({ ...base, gauge: 0.5, gaugeDate: '2026-10-15' }, '2026-10-15');
+  assert.deepEqual([moitie.unitsInTank, moitie.unitsToBuy, moitie.usedGauge], [20, 19.6, true]);
+  // Jauge vieille de plus de 3 jours : ignorée, par prudence.
+  assert.equal(fuelRemaining({ ...base, gauge: 0.5, gaugeDate: '2026-10-05' }, '2026-10-15').usedGauge, false);
+  // Plein suffisant : rien à acheter.
+  assert.equal(fuelRemaining({ ...base, gauge: 1, gaugeDate: '2026-10-14' }, '2026-10-15').costMinor, 0);
+  assert.ok(CAR_MODELS.every((m) => TANK_BY_MODEL[m.id] > 0));
+});
+
+test('département à partir du code postal', () => {
+  assert.equal(departmentPrefix('76600'), '76');
+  assert.equal(departmentPrefix('20000'), '20');
+  assert.equal(departmentPrefix('97400'), '974');
+  assert.equal(departmentPrefix('7660'), null);
+  assert.equal(departmentPrefix(''), null);
 });

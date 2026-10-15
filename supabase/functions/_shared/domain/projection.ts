@@ -12,7 +12,33 @@ import { addDays, diffDays, endOfMonth, startOfMonth, type DateStr } from './dat
 //   − autres dépenses courantes : moyenne par jour × jours restants
 // Ce n'est qu'une estimation : elle repose sur les mois précédents complets.
 
-export type ProjectionLineKind = 'income' | 'recurring' | 'forecast' | 'variable';
+export type ProjectionLineKind = 'income' | 'recurring' | 'fixed' | 'forecast' | 'variable';
+
+/** Entrée ou sortie fixe déclarée par l'utilisateur (loyer, APL…), au jour près chaque mois. */
+export interface FixedItem {
+  id: string;
+  label: string;
+  /** Montant habituel, positif. */
+  amountMinor: number;
+  direction: 'in' | 'out';
+  /** Jour du mois (1 à 31 ; 31 = dernier jour). */
+  day: number;
+  /** Mot du libellé bancaire pour reconnaître l'opération (facultatif). */
+  keyword?: string | null;
+}
+
+/**
+ * L'opération bancaire correspond-elle à cette entrée fixe ? Par mot-clé s'il est donné,
+ * sinon par sens, jour (± 4 jours) et montant proche (de -30 % à +50 %, ex. loyer + électricité variable).
+ */
+export function matchesFixed(t: { label: string; amountMinor: number; date: DateStr }, item: FixedItem): boolean {
+  const sign = item.direction === 'in' ? 1 : -1;
+  if (Math.sign(t.amountMinor) !== sign) return false;
+  const kw = item.keyword?.trim();
+  if (kw) return normalizeLabel(t.label).includes(normalizeLabel(kw).trim());
+  const amount = Math.abs(t.amountMinor);
+  return Math.abs(dayOf(t.date) - item.day) <= 4 && amount >= item.amountMinor * 0.7 && amount <= item.amountMinor * 1.5;
+}
 
 export interface ProjectionLine {
   kind: ProjectionLineKind;
@@ -30,8 +56,10 @@ export interface ProjectionInput {
   transactions: ClassifiedTransaction[];
   /** Première date couverte par les données (null : rien d'importé). */
   coverageFrom: DateStr | null;
-  /** Prévision mensuelle de l'outil Prévisions, si l'utilisateur l'a enregistrée. */
-  forecast?: { groceriesMonthlyMinor: number; fuelMonthlyMinor: number } | null;
+  /** Reste à dépenser d'ici la fin du mois selon l'outil Prévisions (déjà calculé à la date du jour). */
+  forecastRemaining?: { groceriesMinor: number; fuelMinor: number } | null;
+  /** Entrées et sorties fixes déclarées par l'utilisateur. */
+  fixedItems?: FixedItem[];
   /** Compter les revenus réguliers attendus (salaire…). Par défaut non : aucune rentrée d'argent n'est anticipée. */
   includeIncome?: boolean;
 }
@@ -93,11 +121,15 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
     end = addDays(from, -1);
   }
 
-  const forecastCats = new Set(input.forecast ? ['groceries', 'transport'] : []);
+  const forecastCats = new Set(input.forecastRemaining ? ['groceries', 'transport'] : []);
+  const fixed = input.fixedItems ?? [];
+  const isFixed = (t: ClassifiedTransaction) => fixed.some((it) => matchesFixed(t, it));
   const usable = input.transactions.filter((t) => t.currency === currency && t.status === 'booked' && !t.removed);
   // On suit l'argent qui sort ou entre vraiment : les transferts internes ne comptent pas,
   // les versements vers l'épargne oui (ils quittent le compte courant).
-  const flows = usable.filter((t) => t.classified.kind !== 'internal_transfer' && !(t.classified.kind === 'savings_transfer' && t.amountMinor > 0));
+  const allFlows = usable.filter((t) => t.classified.kind !== 'internal_transfer' && !(t.classified.kind === 'savings_transfer' && t.amountMinor > 0));
+  // Les opérations couvertes par une entrée fixe sont gérées à part : ni régulières détectées, ni dépenses courantes.
+  const flows = allFlows.filter((t) => !isFixed(t));
 
   // 1. Opérations régulières (même libellé au moins 2 des mois de référence).
   const buckets = new Map<string, Bucket>();
@@ -134,18 +166,23 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
     const amount = median([...b.months.values()].map((m) => m.total));
     lines.push({ kind: b.sign > 0 ? 'income' : 'recurring', label: b.label, amountMinor: b.sign * amount, day });
   }
+  // Entrées et sorties fixes déclarées : comptées si elles ne sont pas encore passées ce mois-ci.
+  const lastDay = dayOf(monthEnd);
+  for (const it of fixed) {
+    const day = Math.min(it.day, lastDay);
+    const passed = allFlows.some((t) => t.date >= monthStart && t.date <= today && matchesFixed(t, it));
+    if (passed) continue;
+    if (day < todayDay - 3) continue; // date passée depuis plusieurs jours : considérée comme réglée
+    lines.push({ kind: 'fixed', label: it.label, amountMinor: (it.direction === 'in' ? 1 : -1) * it.amountMinor, day });
+  }
   lines.sort((a, b) => (a.day ?? 0) - (b.day ?? 0));
 
   // 2. Reste de la prévision courses / carburant.
-  if (input.forecast) {
-    const spentThisMonth = (cat: string) =>
-      usable
-        .filter((t) => t.date >= monthStart && t.date <= today && t.classified.category === cat)
-        .reduce((s, t) => s + (t.classified.kind === 'expense' ? -t.amountMinor : t.classified.kind === 'refund' ? -t.amountMinor : 0), 0);
-    const g = Math.max(0, input.forecast.groceriesMonthlyMinor - spentThisMonth('groceries'));
-    const f = Math.max(0, input.forecast.fuelMonthlyMinor - spentThisMonth('transport'));
-    if (g > 0) lines.push({ kind: 'forecast', label: 'Courses restantes (prévision)', amountMinor: -g });
-    if (f > 0) lines.push({ kind: 'forecast', label: 'Carburant restant (prévision)', amountMinor: -f });
+  if (input.forecastRemaining) {
+    const g = input.forecastRemaining.groceriesMinor;
+    const f = input.forecastRemaining.fuelMinor;
+    if (g > 0) lines.push({ kind: 'forecast', label: `Courses d'ici la fin du mois (${daysLeft} j)`, amountMinor: -g });
+    if (f > 0) lines.push({ kind: 'forecast', label: 'Carburant à acheter d’ici la fin du mois', amountMinor: -f });
   }
 
   // 3. Autres dépenses courantes : moyenne quotidienne hors régulières et hors catégories prévues.

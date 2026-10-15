@@ -6,7 +6,7 @@ import { allTransactions, dataQuality, evaluateAll, goalsProgress, progress, que
 import { useStore } from './store';
 import { useServerBank } from '@/features/bank/serverBank';
 import { useBank } from '@/features/bank/useBank';
-import { fuelForecast, groceryForecast } from '@shared/domain/forecast.ts';
+import { fuelRemaining, groceryRemainingMinor } from '@shared/domain/forecast.ts';
 import { projectEndOfMonth } from '@shared/domain/projection.ts';
 
 export function useTransactions(): ClassifiedTransaction[] {
@@ -83,9 +83,9 @@ export function useProjection() {
     if (!used.length) return null;
     const balance = used.reduce((s, a) => s + (a.balanceMinor ?? 0), 0);
     const ids = new Set(used.map((a) => a.id));
-    const forecast = data.forecast
-      ? { groceriesMonthlyMinor: groceryForecast(data.forecast.grocery).monthlyMinor, fuelMonthlyMinor: fuelForecast(data.forecast.fuel).monthlyMinor }
-      : null;
+    // Courses et carburant : seulement ce qui reste à dépenser d'ici la fin du mois, à partir d'aujourd'hui.
+    const fuelLeft = data.forecast ? fuelRemaining(data.forecast.fuel, today) : null;
+    const forecastRemaining = data.forecast ? { groceriesMinor: groceryRemainingMinor(data.forecast.grocery, today), fuelMinor: fuelLeft!.costMinor } : null;
     const projection = projectEndOfMonth({
       today,
       balanceMinor: balance,
@@ -93,8 +93,9 @@ export function useProjection() {
       // Seulement les opérations des comptes pris en compte dans le solde.
       transactions: txs.filter((t) => t.source === 'manual' || (t.accountId ? ids.has(t.accountId) : false)),
       coverageFrom: quality.coverageFrom,
-      forecast,
+      forecastRemaining,
+      fixedItems: data.fixedItems ?? [],
     });
-    return { ...projection, accounts: used.length, lastSyncAt: bank.connections.map((c) => c.lastSyncAt).filter(Boolean).sort()[0] ?? null };
-  }, [data.profile.currency, data.forecast, bank.accounts, bank.connections, txs, quality.coverageFrom, today]);
+    return { ...projection, fuelLeft, accounts: used.length, lastSyncAt: bank.connections.map((c) => c.lastSyncAt).filter(Boolean).sort()[0] ?? null };
+  }, [data.profile.currency, data.forecast, data.fixedItems, bank.accounts, bank.connections, txs, quality.coverageFrom, today]);
 }

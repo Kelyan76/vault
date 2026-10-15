@@ -1,5 +1,5 @@
 import type { ClassifiedTransaction } from './aggregation.ts';
-import { addDays, endOfMonth, startOfMonth, type DateStr } from './dates.ts';
+import { addDays, diffDays, endOfMonth, parseDate, startOfMonth, type DateStr } from './dates.ts';
 
 // Prévisions de dépenses : courses du foyer et carburant des trajets.
 // Les repères ci-dessous sont des valeurs indicatives choisies pour VAULT, ajustables par l'utilisateur ;
@@ -76,13 +76,16 @@ export const ENERGY_LABELS: Record<Energy, { label: string; unit: 'L' | 'kWh' }>
   electrique: { label: 'Électrique', unit: 'kWh' },
 };
 
-/** Prix par défaut, en centimes par litre ou par kWh : à vérifier à la pompe ou sur ta facture, ils varient. */
+/**
+ * Prix de secours, en centimes par litre ou par kWh, utilisés seulement si les prix officiels
+ * (prix-carburants, data.economie.gouv.fr) ne sont pas joignables. Relevés d'octobre 2026, arrondis.
+ */
 export const DEFAULT_PRICE_MINOR: Record<Energy, number> = {
-  sp95: 175,
-  sp98: 185,
-  gazole: 165,
-  e85: 85,
-  gpl: 99,
+  sp95: 217,
+  sp98: 227,
+  gazole: 236,
+  e85: 91,
+  gpl: 106,
   electrique: 25,
 };
 
@@ -93,6 +96,30 @@ export interface CarModel {
   /** Consommation indicative en cycle mixte (L ou kWh pour 100 km), à remplacer par la vraie si connue. */
   per100: number;
 }
+
+/** Contenance indicative du réservoir (L) ou de la batterie utile (kWh), par modèle. */
+export const TANK_BY_MODEL: Record<string, number> = {
+  'peugeot-208-puretech': 44,
+  'peugeot-2008-puretech': 44,
+  'peugeot-308-bluehdi': 52,
+  'peugeot-e208': 48,
+  'renault-clio-tce': 42,
+  'renault-clio-etech': 39,
+  'renault-captur-tce': 48,
+  'renault-megane-dci': 50,
+  'renault-zoe': 52,
+  'dacia-sandero-tce': 50,
+  'dacia-sandero-ecog': 40,
+  'dacia-duster-tce': 50,
+  'citroen-c3-puretech': 45,
+  'citroen-c4-puretech': 52,
+  'vw-polo-tsi': 40,
+  'vw-golf-tsi': 50,
+  'toyota-yaris-hybride': 36,
+  'toyota-chr-hybride': 43,
+  'fiat-500-hybrid': 35,
+  'tesla-model-3': 57,
+};
 
 /** Modèles courants en France, consommations indicatives arrondies. */
 export const CAR_MODELS: CarModel[] = [
@@ -130,6 +157,15 @@ export interface FuelInput {
   per100: number;
   /** Centimes par litre ou par kWh. */
   priceMinor: number;
+  /** Contenance du réservoir (L) ou de la batterie (kWh). */
+  tankCapacity?: number;
+  /** Jauge indiquée par l'utilisateur, de 0 (vide) à 1 (plein), et sa date. */
+  gauge?: number | null;
+  gaugeDate?: DateStr | null;
+  /** Code postal pour le prix moyen du département ; vide = moyenne nationale. */
+  postalCode?: string | null;
+  /** Prix récupéré automatiquement (prix officiels) ou saisi à la main. */
+  priceSource?: 'auto' | 'manual';
 }
 
 export function validateFuel(i: FuelInput): string | null {
@@ -201,4 +237,74 @@ export const DEFAULT_FUEL: FuelInput = { kmOneWay: 15, workDaysPerWeek: 5, extra
 
 export function monthBounds(today: DateStr) {
   return { from: startOfMonth(today), to: endOfMonth(today) };
+}
+
+// ——— Reste du mois, à partir de la date du jour ———
+
+/** Jours restants après aujourd'hui, jusqu'au dernier jour du mois. */
+export function daysLeftInMonth(today: DateStr): number {
+  return diffDays(endOfMonth(today), today);
+}
+
+/**
+ * Jours de travail restants après aujourd'hui : du lundi au vendredi pour 5 jours par semaine ;
+ * moins de 5 jours répartis au prorata des jours ouvrés ; 6 ou 7 jours ajoutent le week-end.
+ */
+export function workDaysLeftInMonth(today: DateStr, workDaysPerWeek: number): number {
+  let weekdays = 0;
+  let weekends = 0;
+  const end = endOfMonth(today);
+  for (let d = addDays(today, 1); d <= end; d = addDays(d, 1)) {
+    const dow = parseDate(d).getUTCDay();
+    if (dow === 0 || dow === 6) weekends++;
+    else weekdays++;
+  }
+  if (workDaysPerWeek <= 5) return (weekdays * workDaysPerWeek) / 5;
+  return weekdays + (weekends * (workDaysPerWeek - 5)) / 2;
+}
+
+export function groceryRemainingMinor(i: GroceryInput, today: DateStr): number {
+  return Math.round((groceryForecast(i).weeklyMinor * daysLeftInMonth(today)) / 7);
+}
+
+/** La jauge n'est prise en compte que si elle a été indiquée il y a 3 jours au plus. */
+export function gaugeIsFresh(i: FuelInput, today: DateStr): boolean {
+  return i.gauge != null && !!i.gaugeDate && diffDays(today, i.gaugeDate) <= 3 && diffDays(today, i.gaugeDate) >= 0;
+}
+
+export interface FuelRemaining {
+  workDaysLeft: number;
+  kmLeft: number;
+  /** Litres ou kWh nécessaires d'ici la fin du mois. */
+  unitsNeeded: number;
+  /** Déjà dans le réservoir selon la jauge (0 si jauge inconnue ou trop ancienne). */
+  unitsInTank: number;
+  unitsToBuy: number;
+  costMinor: number;
+  usedGauge: boolean;
+}
+
+export function fuelRemaining(i: FuelInput, today: DateStr): FuelRemaining {
+  const workDaysLeft = workDaysLeftInMonth(today, i.workDaysPerWeek);
+  const kmLeft = 2 * i.kmOneWay * workDaysLeft + (i.extraKmPerWeek * daysLeftInMonth(today)) / 7;
+  const unitsNeeded = (kmLeft * i.per100) / 100;
+  const usedGauge = gaugeIsFresh(i, today) && (i.tankCapacity ?? 0) > 0;
+  const unitsInTank = usedGauge ? Math.max(0, Math.min(1, i.gauge!)) * i.tankCapacity! : 0;
+  const unitsToBuy = Math.max(0, unitsNeeded - unitsInTank);
+  return {
+    workDaysLeft: Math.round(workDaysLeft * 10) / 10,
+    kmLeft: Math.round(kmLeft),
+    unitsNeeded: Math.round(unitsNeeded * 10) / 10,
+    unitsInTank: Math.round(unitsInTank * 10) / 10,
+    unitsToBuy: Math.round(unitsToBuy * 10) / 10,
+    costMinor: Math.round(unitsToBuy * i.priceMinor),
+    usedGauge,
+  };
+}
+
+/** Département à partir du code postal (2A/2B pour la Corse, 3 chiffres pour l'outre-mer). */
+export function departmentPrefix(postalCode: string | null | undefined): string | null {
+  const cp = (postalCode ?? '').trim();
+  if (!/^[0-9]{5}$/.test(cp)) return null;
+  return cp.startsWith('97') || cp.startsWith('98') ? cp.slice(0, 3) : cp.slice(0, 2);
 }

@@ -10,6 +10,7 @@ import type { CategoryOverride, Transaction } from '../../supabase/functions/_sh
 import type { XpEvent } from '../../supabase/functions/_shared/domain/xp.ts';
 import type { AchievementId } from '../../supabase/functions/_shared/domain/achievements.ts';
 import type { FuelInput, GroceryInput } from '../../supabase/functions/_shared/domain/forecast.ts';
+import type { FixedItem } from '../../supabase/functions/_shared/domain/projection.ts';
 
 /** Deux espaces qui ne se mélangent jamais : la démo (données fictives) et mes données. */
 export type Space = 'demo' | 'personal';
@@ -92,6 +93,8 @@ export interface UserData {
   reports: { friendId: string; reason: string; at: string }[];
   /** Réglages de l'outil de prévision (absents tant que l'utilisateur ne l'a pas ouvert). */
   forecast?: { grocery: GroceryInput; fuel: FuelInput; updatedAt: string };
+  /** Entrées et sorties fixes déclarées (loyer, APL…), utilisées pour le solde de fin de mois. */
+  fixedItems?: FixedItem[];
 }
 
 export interface Meta {

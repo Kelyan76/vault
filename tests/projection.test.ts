@@ -54,20 +54,45 @@ test('le jour du mois compte : au 2 octobre, salaire et loyer sont encore à ven
   assert.equal(p.daysLeft, 29);
 });
 
-test('avec la prévision : reste des courses = prévision du mois − déjà dépensé, pas de double comptage', () => {
+test('avec la prévision : reste des courses et du carburant déjà calculé à la date, Lidl non compté deux fois', () => {
   const p = projectEndOfMonth({
     today: '2026-10-15',
     balanceMinor: 100000,
     currency: 'EUR',
     transactions: history(),
     coverageFrom: '2026-07-01',
-    forecast: { groceriesMonthlyMinor: 25000, fuelMonthlyMinor: 8000 },
+    forecastRemaining: { groceriesMinor: 11400, fuelMinor: 4300 },
   });
-  const g = p.lines.find((l) => l.label.startsWith('Courses'))!;
-  assert.equal(g.amountMinor, -(25000 - 6000));
-  assert.equal(p.lines.find((l) => l.label.startsWith('Carburant'))!.amountMinor, -8000);
-  // Lidl n'est plus traité comme une opération régulière : il est couvert par la prévision.
+  assert.equal(p.lines.find((l) => l.label.startsWith('Courses'))!.amountMinor, -11400);
+  assert.equal(p.lines.find((l) => l.label.startsWith('Carburant'))!.amountMinor, -4300);
   assert.ok(!p.lines.some((l) => l.label.startsWith('LIDL')));
+});
+
+test('entrées et sorties fixes : loyer du 10 avec électricité variable, APL du 5', () => {
+  // Loyer : libellé différent chaque mois (mois écrit en toutes lettres), montant 497 € + électricité.
+  const months: [string, string, number][] = [['07', 'JUILLET', 52100], ['08', 'AOUT', 50800], ['09', 'SEPTEMBRE', 53300]];
+  const rows = [];
+  for (const [m, name, amount] of months) {
+    rows.push(tx({ date: `2026-${m}-10`, amountMinor: -amount, label: `VIR LOYER ${name} M DUPONT` }));
+    rows.push(tx({ date: `2026-${m}-05`, amountMinor: 34400, label: `CAF APL ${m}` }));
+    rows.push(tx({ date: `2026-${m}-12`, amountMinor: -3000, label: m === '07' ? 'PIZZA NAPOLI' : m === '08' ? 'SUSHI KYO' : 'BURGER BAR' }));
+  }
+  const fixedItems = [
+    { id: 'loyer', label: 'Loyer', amountMinor: 49700, direction: 'out' as const, day: 10 },
+    { id: 'apl', label: 'APL', amountMinor: 34400, direction: 'in' as const, day: 5 },
+  ];
+  const sansFixes = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01' });
+  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01', fixedItems });
+  // Avec les entrées fixes, le loyer ne gonfle plus les dépenses courantes : seules les 3 sorties resto restent.
+  const variable = p.lines.find((l) => l.kind === 'variable')!;
+  assert.equal(variable.amountMinor, -Math.round((9000 / 92) * 29));
+  assert.ok(sansFixes.lines.find((l) => l.kind === 'variable')!.amountMinor < variable.amountMinor);
+  // Le 2 : APL (le 5) et loyer (le 10) sont à venir, montants déclarés.
+  assert.deepEqual(p.lines.filter((l) => l.kind === 'fixed').map((l) => [l.label, l.amountMinor, l.day]), [['APL', 34400, 5], ['Loyer', -49700, 10]]);
+  // Le 15 octobre, avec loyer et APL déjà passés ce mois-ci : plus rien à compter.
+  const oct = classifyAll([...rows, tx({ date: '2026-10-05', amountMinor: 34400, label: 'CAF APL 10' }), tx({ date: '2026-10-10', amountMinor: -51200, label: 'VIR LOYER OCTOBRE M DUPONT' })]);
+  const mid = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: oct, coverageFrom: '2026-07-01', fixedItems });
+  assert.ok(!mid.lines.some((l) => l.kind === 'fixed'));
 });
 
 test('sans historique complet : seulement le solde et la prévision', () => {

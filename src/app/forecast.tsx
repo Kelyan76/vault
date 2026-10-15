@@ -1,17 +1,20 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import {
   actualMonthlyAverage,
   CAR_MODELS,
+  daysLeftInMonth,
   DEFAULT_FUEL,
   DEFAULT_GROCERY,
   DEFAULT_PRICE_MINOR,
   ENERGY_LABELS,
-  fuelForecast,
+  fuelRemaining,
   GROCERY_LEVEL_LABELS,
   GROCERY_WEEKLY_MINOR,
   groceryForecast,
+  groceryRemainingMinor,
+  TANK_BY_MODEL,
   validateFuel,
   validateGrocery,
   type Energy,
@@ -19,13 +22,15 @@ import {
   type GroceryInput,
   type GroceryLevel,
 } from '@shared/domain/forecast.ts';
-import { applyForecastBudgets, saveForecast } from '@/store/actions';
+import { parseAmountInput } from '@shared/domain/money.ts';
+import { addFixedItem, applyForecastBudgets, removeFixedItem, saveForecast } from '@/store/actions';
 import { useDataQuality, useProjection, useTransactions } from '@/store/hooks';
 import { useStore } from '@/store/store';
+import { fetchFuelPrices, type FuelPrices } from '@/features/forecast/fuelPrices';
 import { Screen, Notice } from '@/ui/layout';
 import { Icon } from '@/ui/Icon';
 import { Button, Card, Chip, Field, IconButton, Row, SectionTitle, T } from '@/ui/primitives';
-import { money, shortDate } from '@/ui/format';
+import { money, relativeTime, shortDate } from '@/ui/format';
 import { colors, fonts, radius, space } from '@/theme/tokens';
 
 function Stepper({ label, hint, value, onChange, max = 15 }: { label: string; hint?: string; value: number; onChange: (n: number) => void; max?: number }) {
@@ -55,22 +60,114 @@ const parseNum = (s: string) => {
   const v = Number(s.replace(',', '.').replace(/\s/g, ''));
   return s.trim() !== '' && Number.isFinite(v) ? v : null;
 };
-const fmt = (n: number) => String(n).replace('.', ',');
+const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
+
+const GAUGES: { label: string; value: number | null }[] = [
+  { label: 'Réserve', value: 0.08 },
+  { label: '1/4', value: 0.25 },
+  { label: '1/2', value: 0.5 },
+  { label: '3/4', value: 0.75 },
+  { label: 'Plein', value: 1 },
+  { label: 'Je ne sais pas', value: null },
+];
+
+function FixedItems() {
+  const { data, act } = useStore();
+  const [label, setLabel] = useState('');
+  const [amount, setAmount] = useState('');
+  const [day, setDay] = useState('');
+  const [direction, setDirection] = useState<'out' | 'in'>('out');
+  const [keyword, setKeyword] = useState('');
+  const [msg, setMsg] = useState<string | null>(null);
+  const cur = data.profile.currency;
+  const items = [...(data.fixedItems ?? [])].sort((a, b) => a.day - b.day);
+
+  function add() {
+    const minor = parseAmountInput(amount, cur);
+    const d = Number(day);
+    if (!minor) return setMsg('Montant invalide (ex. 497).');
+    const err = act((x, env) => addFixedItem(x, { label, amountMinor: minor, day: d, direction, keyword }, env));
+    setMsg(err);
+    if (!err) {
+      setLabel('');
+      setAmount('');
+      setDay('');
+      setKeyword('');
+    }
+  }
+
+  return (
+    <Card style={{ gap: space.md }}>
+      <T v="small" color={colors.textMuted}>
+        Ce qui tombe à date fixe chaque mois, comme le loyer ou les APL. Ces montants remplacent ce que VAULT devine, et ne sont plus comptés dans les dépenses courantes.
+      </T>
+      {items.length ? (
+        <View style={{ gap: 8 }}>
+          {items.map((it) => (
+            <Row key={it.id} style={{ justifyContent: 'space-between' }}>
+              <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: it.direction === 'in' ? colors.primarySoft : colors.questSoft, alignItems: 'center', justifyContent: 'center' }}>
+                <T v="tiny" color={it.direction === 'in' ? colors.primary : colors.quest}>
+                  LE {it.day}
+                </T>
+              </View>
+              <View style={{ flex: 1 }}>
+                <T v="bodyStrong">{it.label}</T>
+                {it.keyword ? (
+                  <T v="small" color={colors.textMuted}>
+                    Reconnu par « {it.keyword} »
+                  </T>
+                ) : null}
+              </View>
+              <T v="bodyStrong" style={{ fontFamily: fonts.mono }} color={it.direction === 'in' ? colors.success : colors.text}>
+                {money(it.direction === 'in' ? it.amountMinor : -it.amountMinor, cur, true)}
+              </T>
+              <IconButton icon="trash" label={`Retirer ${it.label}`} onPress={() => act((x, env) => removeFixedItem(x, it.id, env))} bg={colors.cardHigh} />
+            </Row>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ gap: space.sm, backgroundColor: colors.cardHigh, borderRadius: radius.md, padding: space.md }}>
+        <Row gap={8}>
+          <Chip label="Sortie" selected={direction === 'out'} onPress={() => setDirection('out')} color={colors.quest} />
+          <Chip label="Entrée" selected={direction === 'in'} onPress={() => setDirection('in')} />
+        </Row>
+        <Field label="Nom" value={label} onChangeText={setLabel} placeholder={direction === 'out' ? 'ex. Loyer' : 'ex. APL'} maxLength={40} />
+        <Row gap={space.sm} style={{ alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}>
+            <Field label={`Montant (${cur})`} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" placeholder={direction === 'out' ? '497' : '344'} maxLength={10} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Field label="Le (jour du mois)" value={day} onChangeText={setDay} keyboardType="number-pad" placeholder={direction === 'out' ? '10' : '5'} maxLength={2} />
+          </View>
+        </Row>
+        <Field label="Mot du libellé bancaire (facultatif)" hint="ex. LOYER ou CAF : aide VAULT à reconnaître l’opération" value={keyword} onChangeText={setKeyword} autoCapitalize="characters" maxLength={30} />
+        {msg ? <Notice tone="alert" text={msg} /> : null}
+        <Button small label="Ajouter" icon="plus" onPress={add} />
+      </View>
+    </Card>
+  );
+}
 
 export default function Forecast() {
   const { data, act, today } = useStore();
   const txs = useTransactions();
   const quality = useDataQuality();
+  const proj = useProjection();
   const cur = data.profile.currency;
-  const [grocery, setGrocery] = useState<GroceryInput>(data.forecast?.grocery ?? DEFAULT_GROCERY);
-  const [fuel, setFuel] = useState<FuelInput>(data.forecast?.fuel ?? DEFAULT_FUEL);
-  // Champs texte libres, convertis à la validation.
+  const saved = data.forecast;
+  const [grocery, setGrocery] = useState<GroceryInput>(saved?.grocery ?? DEFAULT_GROCERY);
+  const [fuel, setFuel] = useState<FuelInput>({ tankCapacity: 45, priceSource: 'auto', ...(saved?.fuel ?? DEFAULT_FUEL) });
   const [km, setKm] = useState(fmt(fuel.kmOneWay));
   const [extra, setExtra] = useState(fmt(fuel.extraKmPerWeek));
   const [per100, setPer100] = useState(fmt(fuel.per100));
   const [price, setPrice] = useState(fmt(fuel.priceMinor / 100));
+  const [tank, setTank] = useState(fmt(fuel.tankCapacity ?? 45));
+  const [postal, setPostal] = useState(fuel.postalCode ?? '');
   const [search, setSearch] = useState('');
+  const [prices, setPrices] = useState<FuelPrices | null>(null);
+  const [priceError, setPriceError] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ tone: 'success' | 'alert'; text: string } | null>(null);
+  const unit = ENERGY_LABELS[fuel.energy].unit;
 
   const fuelInput: FuelInput = {
     ...fuel,
@@ -78,15 +175,54 @@ export default function Forecast() {
     extraKmPerWeek: parseNum(extra) ?? -1,
     per100: parseNum(per100) ?? -1,
     priceMinor: Math.round((parseNum(price) ?? -1) * 100),
+    tankCapacity: parseNum(tank) ?? 0,
+    postalCode: postal.trim() || null,
   };
   const gErr = validateGrocery(grocery);
   const fErr = validateFuel(fuelInput);
   const g = gErr ? null : groceryForecast(grocery);
-  const f = fErr ? null : fuelForecast(fuelInput);
-  const unit = ENERGY_LABELS[fuel.energy].unit;
+  const gLeft = gErr ? null : groceryRemainingMinor(grocery, today);
+  const fLeft = fErr ? null : fuelRemaining(fuelInput, today);
+  const daysLeft = daysLeftInMonth(today);
+
+  // Prix officiels : rechargés quand le code postal change (au plus une fois par code complet).
+  const postalKey = /^[0-9]{5}$/.test(postal.trim()) ? postal.trim() : '';
+  useEffect(() => {
+    let cancelled = false;
+    setPriceError(null);
+    fetchFuelPrices(postalKey || null)
+      .then((p) => {
+        if (!cancelled) setPrices(p);
+      })
+      .catch(() => {
+        if (!cancelled) setPriceError('Prix officiels indisponibles pour le moment : prix de secours utilisé, modifiable.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [postalKey]);
+
+  // En mode automatique, le prix suit les prix officiels du carburant choisi.
+  useEffect(() => {
+    if (fuel.priceSource !== 'auto') return;
+    const p = prices?.prices[fuel.energy];
+    if (p) setPrice(fmt(p / 100));
+  }, [prices, fuel.energy, fuel.priceSource]);
+
+  // Enregistrement automatique : l'accueil utilise toujours la dernière prévision valide.
+  const lastSaved = useRef('');
+  useEffect(() => {
+    if (gErr || fErr) return;
+    const payload = JSON.stringify({ grocery, fuel: fuelInput });
+    if (payload === lastSaved.current) return;
+    const t = setTimeout(() => {
+      lastSaved.current = payload;
+      act((d, env) => saveForecast(d, { grocery, fuel: fuelInput }, env));
+    }, 600);
+    return () => clearTimeout(t);
+  });
 
   const realGroceries = useMemo(() => actualMonthlyAverage(txs, 'groceries', cur, today, quality.coverageFrom ?? (quality.mode === 'manual' ? '0000-01-01' : null)), [txs, cur, today, quality]);
-  const realTransport = useMemo(() => actualMonthlyAverage(txs, 'transport', cur, today, quality.coverageFrom ?? (quality.mode === 'manual' ? '0000-01-01' : null)), [txs, cur, today, quality]);
 
   const models = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -96,30 +232,29 @@ export default function Forecast() {
 
   function pickModel(id: string) {
     const m = CAR_MODELS.find((x) => x.id === id)!;
-    setFuel({ ...fuel, carModelId: m.id, energy: m.energy, per100: m.per100, priceMinor: DEFAULT_PRICE_MINOR[m.energy] });
+    setFuel({ ...fuel, carModelId: m.id, energy: m.energy, per100: m.per100 });
     setPer100(fmt(m.per100));
-    setPrice(fmt(DEFAULT_PRICE_MINOR[m.energy] / 100));
+    setTank(fmt(TANK_BY_MODEL[m.id] ?? 45));
+    if (fuel.priceSource !== 'auto' || m.energy === 'electrique') setPrice(fmt((prices?.prices[m.energy] ?? DEFAULT_PRICE_MINOR[m.energy]) / 100));
     setSearch('');
   }
 
   function pickEnergy(e: Energy) {
-    setFuel({ ...fuel, energy: e, carModelId: null });
-    setPrice(fmt(DEFAULT_PRICE_MINOR[e] / 100));
+    setFuel({ ...fuel, energy: e, carModelId: null, priceSource: e === 'electrique' ? 'manual' : fuel.priceSource });
+    if (e === 'electrique') setPrice(fmt(DEFAULT_PRICE_MINOR.electrique / 100));
     if (e === 'electrique' && (parseNum(per100) ?? 0) < 10) setPer100('16');
     if (e !== 'electrique' && (parseNum(per100) ?? 0) > 20) setPer100('6');
   }
 
-  function save(withBudgets: boolean) {
-    const input = { grocery, fuel: fuelInput };
-    const err = act((d, env) => (withBudgets ? applyForecastBudgets(d, input, env) : saveForecast(d, input, env)));
-    setMsg(err ? { tone: 'alert', text: err } : { tone: 'success', text: withBudgets ? 'Budgets mensuels « Alimentation » et « Transport » créés à partir de ta prévision.' : 'Prévision enregistrée.' });
+  function budgets() {
+    const err = act((d, env) => applyForecastBudgets(d, { grocery, fuel: fuelInput }, env));
+    setMsg(err ? { tone: 'alert', text: err } : { tone: 'success', text: 'Budgets mensuels « Alimentation » et « Transport » créés à partir de ta prévision.' });
   }
 
-  const total = (g?.monthlyMinor ?? 0) + (f?.monthlyMinor ?? 0);
-  const proj = useProjection();
+  const gaugeFresh = fLeft?.usedGauge ?? false;
 
   return (
-    <Screen back title="Prévisions" subtitle="Ce qu’il te restera à la fin du mois, et le détail de tes courses et de ton essence.">
+    <Screen back title="Prévisions" subtitle="Ce qu’il te restera à la fin du mois, calculé à partir d’aujourd’hui.">
       {proj ? (
         <Card style={{ gap: space.sm, marginBottom: space.md }}>
           <Row style={{ justifyContent: 'space-between' }}>
@@ -147,29 +282,20 @@ export default function Forecast() {
           ))}
           <View style={{ height: 1, backgroundColor: colors.border }} />
           <Row style={{ justifyContent: 'space-between' }}>
-            <T v="heading">Solde prévu le {shortDate(proj.endOfMonth)}</T>
+            <T v="heading">Le {shortDate(proj.endOfMonth)}</T>
             <T v="number" style={{ fontSize: 22 }} color={proj.projectedMinor < 0 ? colors.alert : colors.primary}>
               {money(proj.projectedMinor, cur)}
             </T>
           </Row>
           <T v="small" color={colors.textMuted}>
-            {proj.referenceMonths
-              ? `Estimation sans aucune rentrée d’argent à venir (ni salaire, ni virement reçu) : prélèvements réguliers repérés sur ${proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : 'ton dernier mois complet'}, autres dépenses au prorata des jours restants${data.forecast ? ', courses et carburant selon ta prévision enregistrée' : ''}. Les opérations en attente ne sont pas encore dans ton solde.`
-              : 'Historique trop court pour repérer tes opérations régulières : la prévision s’affinera après un mois complet de données.'}
+            Sans salaire ni virement à venir. Tes entrées et sorties fixes sont comptées si leur date n’est pas encore passée ; les autres prélèvements réguliers sont repérés sur{' '}
+            {proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : proj.referenceMonths === 1 ? 'ton dernier mois complet' : 'tes mois précédents (historique encore trop court)'}. Les opérations en attente ne sont pas encore dans ton solde.
           </T>
         </Card>
       ) : null}
-      <View style={{ backgroundColor: colors.reward, borderRadius: radius.lg, padding: space.lg, gap: 4 }}>
-        <T v="heading" color={colors.onColor}>
-          Prévision du mois
-        </T>
-        <T v="numberXL" color={colors.onColor}>
-          {money(total, cur)}
-        </T>
-        <T v="small" color={colors.onColor}>
-          Courses {g ? money(g.monthlyMinor, cur) : '—'} · Carburant {f ? money(f.monthlyMinor, cur) : '—'}
-        </T>
-      </View>
+
+      <SectionTitle title="Entrées et sorties fixes" />
+      <FixedItems />
 
       <SectionTitle title="Courses du foyer" />
       <Card style={{ gap: space.md }}>
@@ -189,39 +315,26 @@ export default function Forecast() {
           </Row>
         </View>
         {gErr ? <Notice tone="alert" text={gErr} /> : null}
-        {g ? (
+        {g && gLeft !== null ? (
           <View style={{ gap: 4, backgroundColor: colors.cardHigh, borderRadius: radius.md, padding: space.md }}>
             <Row style={{ justifyContent: 'space-between' }}>
               <T v="small" color={colors.textMuted}>
-                Estimation
+                D’ici la fin du mois ({daysLeft} j)
               </T>
               <T v="number" style={{ fontSize: 22 }}>
-                {money(g.monthlyMinor, cur)}
-                <T v="small" color={colors.textMuted}>
-                  {' '}/ mois
-                </T>
+                {money(gLeft, cur)}
               </T>
             </Row>
             <T v="small" color={colors.textMuted}>
-              Soit {money(g.weeklyMinor, cur)} par semaine pour {g.persons} personne{g.persons > 1 ? 's' : ''}.
+              {money(g.weeklyMinor, cur)} par semaine pour {g.persons} personne{g.persons > 1 ? 's' : ''}, soit {money(g.monthlyMinor, cur)} sur un mois entier.
             </T>
-            <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-              <T v="small" color={colors.textMuted}>
-                Tes vraies courses
-              </T>
-              <T v="bodyStrong" style={{ fontFamily: fonts.mono }}>
-                {realGroceries.monthlyMinor !== null ? `${money(realGroceries.monthlyMinor, cur)} / mois` : 'pas assez de données'}
-              </T>
-            </Row>
-            {realGroceries.monthlyMinor !== null ? (
-              <T v="small" color={colors.textMuted}>
-                Moyenne de la catégorie « Alimentation » sur {realGroceries.months} mois complet{realGroceries.months > 1 ? 's' : ''}.
-              </T>
-            ) : null}
+            <T v="small" color={colors.textMuted}>
+              Tes vraies courses : {realGroceries.monthlyMinor !== null ? `${money(realGroceries.monthlyMinor, cur)} par mois en moyenne (${realGroceries.months} mois complet${realGroceries.months > 1 ? 's' : ''})` : 'pas encore assez de données'}.
+            </T>
           </View>
         ) : null}
         <T v="small" color={colors.textMuted}>
-          Repères indicatifs choisis pour VAULT, pas des statistiques officielles : en « {GROCERY_LEVEL_LABELS[grocery.level]} », {money(GROCERY_WEEKLY_MINOR[grocery.level].adult, cur)} par adulte et par semaine. Ajuste le style pour coller à tes tickets.
+          Repères indicatifs choisis pour VAULT, pas des statistiques officielles : en « {GROCERY_LEVEL_LABELS[grocery.level]} », {money(GROCERY_WEEKLY_MINOR[grocery.level].adult, cur)} par adulte et par semaine.
         </T>
       </Card>
 
@@ -247,8 +360,8 @@ export default function Forecast() {
         {model ? (
           <Row gap={8}>
             <Icon name="check" size={16} color={colors.primary} />
-            <T v="small">
-              {model.name} : consommation indicative {fmt(model.per100)} {unit}/100 km, à remplacer par la tienne si tu la connais.
+            <T v="small" style={{ flex: 1 }}>
+              {model.name} : {fmt(model.per100)} {unit}/100 km et {fmt(TANK_BY_MODEL[model.id] ?? 45)} {unit} de réservoir (valeurs indicatives, modifiables).
             </T>
           </Row>
         ) : null}
@@ -270,40 +383,84 @@ export default function Forecast() {
             <Field label={`Conso (${unit}/100 km)`} value={per100} onChangeText={setPer100} keyboardType="decimal-pad" maxLength={5} />
           </View>
           <View style={{ flex: 1 }}>
-            <Field label={`Prix (€/${unit})`} value={price} onChangeText={setPrice} keyboardType="decimal-pad" maxLength={6} />
+            <Field label={`Réservoir (${unit})`} value={tank} onChangeText={setTank} keyboardType="decimal-pad" maxLength={5} />
           </View>
         </Row>
-        <T v="small" color={colors.textMuted}>
-          Prix par défaut indicatif : vérifie-le à la pompe ou sur ta facture d’électricité, il change souvent.
-        </T>
+
+        <View style={{ gap: 8 }}>
+          <T v="small" color={colors.textMuted}>
+            Ta jauge aujourd’hui
+          </T>
+          <Row gap={8} style={{ flexWrap: 'wrap' }}>
+            {GAUGES.map((gg) => {
+              const selected = gg.value === null ? !gaugeFresh : gaugeFresh && fuel.gauge === gg.value;
+              return <Chip key={gg.label} label={gg.label} selected={selected} onPress={() => setFuel({ ...fuel, gauge: gg.value, gaugeDate: gg.value === null ? null : today })} color={colors.reward} />;
+            })}
+          </Row>
+          {fuel.gaugeDate && !gaugeFresh && fuel.gauge != null ? (
+            <T v="small" color={colors.textMuted}>
+              Jauge indiquée le {shortDate(fuel.gaugeDate)} : trop ancienne, mets-la à jour.
+            </T>
+          ) : null}
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <Row gap={space.sm} style={{ alignItems: 'flex-start' }}>
+            <View style={{ flex: 1 }}>
+              <Field label="Code postal" hint="pour le prix moyen de ton département" value={postal} onChangeText={setPostal} keyboardType="number-pad" maxLength={5} placeholder="76600" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Field
+                label={`Prix (€/${unit})`}
+                value={price}
+                onChangeText={(t) => {
+                  setPrice(t);
+                  setFuel({ ...fuel, priceSource: 'manual' });
+                }}
+                keyboardType="decimal-pad"
+                maxLength={6}
+              />
+            </View>
+          </Row>
+          {fuel.energy === 'electrique' ? (
+            <T v="small" color={colors.textMuted}>
+              Électricité : indique le prix de ton kWh (facture ou borne), il n’existe pas de prix officiel moyen.
+            </T>
+          ) : fuel.priceSource === 'auto' && prices?.prices[fuel.energy] ? (
+            <Row gap={6}>
+              <Icon name="check" size={14} color={colors.primary} />
+              <T v="small" color={colors.textMuted} style={{ flex: 1 }}>
+                Prix réel : {prices.scope.toLowerCase()} ({prices.stations} stations), mis à jour {relativeTime(prices.fetchedAt)}. Source : prix-carburants.gouv.fr.
+              </T>
+            </Row>
+          ) : fuel.priceSource === 'manual' ? (
+            <Pressable onPress={() => setFuel({ ...fuel, priceSource: 'auto' })} accessibilityRole="button">
+              <T v="small" color={colors.primary}>
+                Prix saisi à la main. Revenir au prix réel
+              </T>
+            </Pressable>
+          ) : null}
+          {priceError ? <Notice tone="warning" text={priceError} /> : null}
+        </View>
+
         {fErr ? <Notice tone="alert" text={fErr} /> : null}
-        {f ? (
+        {fLeft ? (
           <View style={{ gap: 4, backgroundColor: colors.cardHigh, borderRadius: radius.md, padding: space.md }}>
             <Row style={{ justifyContent: 'space-between' }}>
               <T v="small" color={colors.textMuted}>
-                Estimation
+                À acheter d’ici la fin du mois
               </T>
               <T v="number" style={{ fontSize: 22 }}>
-                {money(f.monthlyMinor, cur)}
-                <T v="small" color={colors.textMuted}>
-                  {' '}/ mois
-                </T>
+                {money(fLeft.costMinor, cur)}
               </T>
             </Row>
             <T v="small" color={colors.textMuted}>
-              {f.kmPerMonth} km par mois, environ {fmt(f.unitsPerMonth)} {unit}. Dont {money(f.commuteMonthlyMinor, cur)} pour aller au travail.
+              {fmt(fLeft.workDaysLeft)} jour{fLeft.workDaysLeft > 1 ? 's' : ''} de travail et {daysLeft} jours restants : {fLeft.kmLeft} km, {fmt(fLeft.unitsNeeded)} {unit} nécessaires
+              {fLeft.usedGauge ? `, dont ${fmt(fLeft.unitsInTank)} ${unit} déjà dans le réservoir` : ''}. Il faudra en acheter {fmt(fLeft.unitsToBuy)} {unit}.
             </T>
-            <Row style={{ justifyContent: 'space-between', marginTop: 6 }}>
-              <T v="small" color={colors.textMuted}>
-                Ta catégorie Transport
-              </T>
-              <T v="bodyStrong" style={{ fontFamily: fonts.mono }}>
-                {realTransport.monthlyMinor !== null ? `${money(realTransport.monthlyMinor, cur)} / mois` : 'pas assez de données'}
-              </T>
-            </Row>
-            {realTransport.monthlyMinor !== null ? (
-              <T v="small" color={colors.textMuted}>
-                Tout compris (carburant, train, péages…), moyenne sur {realTransport.months} mois complet{realTransport.months > 1 ? 's' : ''}.
+            {!fLeft.usedGauge ? (
+              <T v="small" color={colors.reward}>
+                Indique ta jauge pour déduire ce qu’il te reste dans le réservoir.
               </T>
             ) : null}
           </View>
@@ -312,8 +469,10 @@ export default function Forecast() {
 
       {msg ? <View style={{ marginTop: space.md }}><Notice tone={msg.tone} text={msg.text} /></View> : null}
       <View style={{ gap: space.sm, marginTop: space.lg }}>
-        <Button label="Créer mes budgets du mois" icon="budget" disabled={!!gErr || !!fErr} onPress={() => save(true)} />
-        <Button kind="secondary" label="Enregistrer" disabled={!!gErr || !!fErr} onPress={() => save(false)} />
+        <T v="small" color={colors.textMuted} center>
+          Tes réglages sont enregistrés automatiquement.
+        </T>
+        <Button label="Créer mes budgets du mois" icon="budget" disabled={!!gErr || !!fErr} onPress={budgets} />
         <Button kind="ghost" label="Voir mon budget" onPress={() => router.push('/(tabs)/budget')} />
       </View>
     </Screen>

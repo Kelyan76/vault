@@ -19,6 +19,7 @@ import { isCategoryId, type CategoryId, type TransactionKind } from '../../supab
 import { awardXp, levelInfo, STREAK_MILESTONES, totalXp, XP_RULES, xpKeys, type XpReason } from '../../supabase/functions/_shared/domain/xp.ts';
 import { sanitizeSharedScore, validatePseudo, type ChallengeType } from '../../supabase/functions/_shared/domain/challenges.ts';
 import { fuelForecast, groceryForecast, validateFuel, validateGrocery, type FuelInput, type GroceryInput } from '../../supabase/functions/_shared/domain/forecast.ts';
+import type { FixedItem } from '../../supabase/functions/_shared/domain/projection.ts';
 import { applyMerge, mergeTransactions } from '../../supabase/functions/_shared/banking/sync.ts';
 import { DEMO_ACCOUNTS, DEMO_CONNECTION_ID, DEMO_INSTITUTION, demoTransactions } from '../../supabase/functions/_shared/banking/demo.ts';
 import type { ActionEffects, Avatar, Friend, Profile, Space, UserData } from './types.ts';
@@ -589,4 +590,31 @@ export function applyForecastBudgets(data: UserData, input: { grocery: GroceryIn
   r = upsertBudget(r.data, { category: 'groceries', limitMinor: groceries, period: 'month' }, env);
   if (r.error || fuel <= 0) return r;
   return upsertBudget(r.data, { category: 'transport', limitMinor: fuel, period: 'month' }, env);
+}
+
+// ——— Entrées et sorties fixes ———
+
+export function addFixedItem(data: UserData, input: Omit<FixedItem, 'id'>, env: Env): Result {
+  return run(data, env, (d) => {
+    const label = input.label.trim();
+    if (label.length < 2 || label.length > 40) fail('Nom de 2 à 40 caractères.');
+    if (!Number.isInteger(input.amountMinor) || input.amountMinor <= 0 || input.amountMinor > 10_000_000) fail('Montant invalide.');
+    if (!Number.isInteger(input.day) || input.day < 1 || input.day > 31) fail('Jour du mois entre 1 et 31.');
+    if ((d.fixedItems ?? []).length >= 20) fail('20 entrées fixes au maximum.');
+    const keyword = input.keyword?.trim() || null;
+    return { ...d, fixedItems: [...(d.fixedItems ?? []), { id: env.id(), label, amountMinor: input.amountMinor, direction: input.direction, day: input.day, keyword }] };
+  });
+}
+
+export function removeFixedItem(data: UserData, id: string, env: Env): Result {
+  return run(data, env, (d) => ({ ...d, fixedItems: (d.fixedItems ?? []).filter((x) => x.id !== id) }));
+}
+
+/** Jauge du réservoir indiquée aujourd'hui (0 à 1), sans toucher au reste de la prévision. */
+export function setFuelGauge(data: UserData, gauge: number | null, env: Env): Result {
+  return run(data, env, (d) => {
+    if (!d.forecast) fail('Enregistre d’abord ta prévision.');
+    if (gauge !== null && !(gauge >= 0 && gauge <= 1)) fail('Jauge invalide.');
+    return { ...d, forecast: { ...d.forecast!, fuel: { ...d.forecast!.fuel, gauge, gaugeDate: gauge === null ? null : env.today } } };
+  });
 }
