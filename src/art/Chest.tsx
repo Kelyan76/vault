@@ -1,144 +1,192 @@
 import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Circle, Defs, Ellipse, G, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import Animated, { Easing, useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming } from 'react-native-reanimated';
+import Svg, { Circle, Defs, G, Line, LinearGradient, Path, RadialGradient, Rect, Stop } from 'react-native-svg';
 import type { GoalStage } from '@shared/domain/savings.ts';
+import { colors } from '@/theme/tokens';
 
-// Le coffre VAULT : il évolue avec la progression des objectifs (stade 0 à 4).
+// Le coffre VAULT : une porte de chambre forte en acier sombre. L'anneau néon s'allume
+// segment par segment avec la progression des sous-coffres (stade 0 à 4).
 // C'est une image du suivi, pas un compte : il ne contient aucun argent réel.
 
 const W = 220;
 const H = 190;
+const CX = 110;
+const CY = 92;
+const SEGMENTS = 24;
 
-function Coin({ x, y, r = 11, delay = 0, float = true }: { x: number; y: number; r?: number; delay?: number; float?: boolean }) {
-  const t = useSharedValue(0);
-  useEffect(() => {
-    if (!float) return;
-    t.value = withDelay(delay, withRepeat(withSequence(withTiming(-6, { duration: 1300, easing: Easing.inOut(Easing.quad) }), withTiming(0, { duration: 1300, easing: Easing.inOut(Easing.quad) })), -1));
-  }, [t, delay, float]);
-  const style = useAnimatedStyle(() => ({ transform: [{ translateY: t.value }] }));
-  return (
-    <Animated.View style={[{ position: 'absolute', left: x - r, top: y - r, width: r * 2, height: r * 2 }, style]} pointerEvents="none">
-      <Svg width={r * 2} height={r * 2} viewBox="0 0 24 24">
-        <Circle cx={12} cy={12} r={11} fill="#FFC857" stroke="#E0A630" strokeWidth={1.6} />
-        <Circle cx={12} cy={12} r={7} fill="none" stroke="#E0A630" strokeWidth={1.4} />
-        <Path d="M10 9.5h4M10 14.5h4M12 8v8" stroke="#B57E10" strokeWidth={1.4} strokeLinecap="round" />
-      </Svg>
-    </Animated.View>
-  );
+function polar(r: number, deg: number) {
+  const a = ((deg - 90) * Math.PI) / 180;
+  return { x: CX + r * Math.cos(a), y: CY + r * Math.sin(a) };
 }
 
-function Sparkle({ x, y, size = 14, delay = 0, color = '#FFC857' }: { x: number; y: number; size?: number; delay?: number; color?: string }) {
-  const s = useSharedValue(0.3);
+function arc(r: number, from: number, to: number) {
+  const a = polar(r, from);
+  const b = polar(r, to);
+  return `M${a.x.toFixed(2)} ${a.y.toFixed(2)}A${r} ${r} 0 0 1 ${b.x.toFixed(2)} ${b.y.toFixed(2)}`;
+}
+
+/** Molette centrale : tourne d'un cran à chaque mise de côté. */
+function Dial({ turn }: { turn: number }) {
+  const rot = useSharedValue(0);
+  const first = useRef(true);
   useEffect(() => {
-    s.value = withDelay(delay, withRepeat(withSequence(withTiming(1, { duration: 700 }), withTiming(0.3, { duration: 900 })), -1));
-  }, [s, delay]);
-  const style = useAnimatedStyle(() => ({ opacity: s.value, transform: [{ scale: s.value }] }));
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    rot.value = withSequence(withTiming(rot.value + 200, { duration: 520, easing: Easing.out(Easing.cubic) }), withSpring(rot.value + 180, { damping: 9 }));
+  }, [turn, rot]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${rot.value}deg` }] }));
+  const S = 76;
   return (
-    <Animated.View style={[{ position: 'absolute', left: x, top: y }, style]} pointerEvents="none">
-      <Svg width={size} height={size} viewBox="0 0 24 24">
-        <Path d="M12 0c1 7 5 11 12 12-7 1-11 5-12 12-1-7-5-11-12-12 7-1 11-5 12-12z" fill={color} />
+    <Animated.View style={[{ position: 'absolute', left: CX - S / 2, top: CY - S / 2, width: S, height: S }, style]} pointerEvents="none">
+      <Svg width={S} height={S} viewBox="0 0 76 76">
+        <Defs>
+          <LinearGradient id="dial" x1="0" y1="0" x2="1" y2="1">
+            <Stop offset="0" stopColor="#3A4234" />
+            <Stop offset="1" stopColor="#161A13" />
+          </LinearGradient>
+        </Defs>
+        <Circle cx={38} cy={38} r={36} fill="url(#dial)" stroke="#4A5442" strokeWidth={1.5} />
+        {Array.from({ length: 40 }, (_, i) => {
+          const a = (i * 9 * Math.PI) / 180;
+          const long = i % 5 === 0;
+          return (
+            <Line
+              key={i}
+              x1={38 + 33 * Math.sin(a)}
+              y1={38 - 33 * Math.cos(a)}
+              x2={38 + (long ? 27 : 30) * Math.sin(a)}
+              y2={38 - (long ? 27 : 30) * Math.cos(a)}
+              stroke={long ? colors.text : '#6B7562'}
+              strokeWidth={long ? 1.6 : 1}
+              strokeLinecap="round"
+            />
+          );
+        })}
+        {/* Poignée en croix */}
+        <Rect x={35} y={12} width={6} height={52} rx={3} fill="#2A3224" stroke="#5A6650" strokeWidth={1} />
+        <Rect x={12} y={35} width={52} height={6} rx={3} fill="#2A3224" stroke="#5A6650" strokeWidth={1} />
+        <Circle cx={38} cy={38} r={10} fill="#1E241A" stroke={colors.primary} strokeWidth={2} />
+        <Circle cx={38} cy={38} r={3} fill={colors.primary} />
+        <Path d="M38 6l3 5h-6z" fill={colors.primary} />
       </Svg>
     </Animated.View>
   );
 }
 
 export function Chest({ stage, size = 1, celebrate = 0 }: { stage: GoalStage; size?: number; celebrate?: number }) {
-  const lid = useSharedValue(0);
-  const bounce = useSharedValue(1);
-  const open = stage >= 2 ? (stage >= 3 ? 1 : 0.55) : 0;
+  const glow = useSharedValue(0.35);
+  const pulse = useSharedValue(1);
 
   useEffect(() => {
-    lid.value = withSpring(open, { damping: 12, stiffness: 90 });
-  }, [open, lid]);
+    glow.value = withRepeat(withSequence(withTiming(0.75, { duration: 1800, easing: Easing.inOut(Easing.quad) }), withTiming(0.35, { duration: 1800, easing: Easing.inOut(Easing.quad) })), -1);
+  }, [glow]);
 
   // Petite célébration quand une contribution est ajoutée (pas au premier affichage).
   const lastCelebrate = useRef(celebrate);
   useEffect(() => {
     if (celebrate === lastCelebrate.current) return;
     lastCelebrate.current = celebrate;
-    bounce.value = withSequence(withTiming(1.08, { duration: 140 }), withSpring(1, { damping: 6, stiffness: 180 }));
-    lid.value = withSequence(withTiming(1, { duration: 220 }), withDelay(600, withSpring(open, { damping: 12 })));
-  }, [celebrate, bounce, lid, open]);
+    pulse.value = withSequence(withTiming(1.05, { duration: 160 }), withSpring(1, { damping: 7, stiffness: 180 }));
+  }, [celebrate, pulse]);
 
-  // Pivot autour de la charnière arrière gauche (x=42, y=96) : RN fait tourner autour du centre, on décale donc le repère.
-  const HX = 42 - W / 2;
-  const HY = 96 - H / 2;
-  const lidStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: HX }, { translateY: HY }, { rotate: `${-24 * lid.value}deg` }, { translateX: -HX }, { translateY: -HY }],
-  }));
-  const bodyStyle = useAnimatedStyle(() => ({ transform: [{ scale: bounce.value }] }));
+  const glowStyle = useAnimatedStyle(() => ({ opacity: stage === 0 ? 0.15 : glow.value }));
+  const bodyStyle = useAnimatedStyle(() => ({ transform: [{ scale: pulse.value }] }));
+
+  // Segments allumés : un quart de l'anneau par stade, plein au stade 4.
+  const lit = Math.round((stage / 4) * SEGMENTS);
+  const full = stage >= 4;
+  const ringColor = full ? colors.reward : colors.primary;
+  const step = 360 / SEGMENTS;
 
   return (
-    <View style={{ width: W * size, height: H * size }} accessibilityRole="image" accessibilityLabel={`Coffre au stade ${stage} sur 4`}>
+    <View style={{ width: W * size, height: H * size }} accessibilityRole="image" accessibilityLabel={`Coffre-fort rempli au stade ${stage} sur 4`}>
       <View style={{ position: 'absolute', width: W, height: H, left: (W * size - W) / 2, top: (H * size - H) / 2, transform: [{ scale: size }] }}>
-      <Animated.View style={[{ width: W, height: H }, bodyStyle]}>
-        {/* Halo */}
-        <Svg width={W} height={H} style={{ position: 'absolute' }}>
-          <Defs>
-            <LinearGradient id="halo" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#FFC857" stopOpacity={stage >= 3 ? 0.45 : 0.18} />
-              <Stop offset="1" stopColor="#FFC857" stopOpacity={0} />
-            </LinearGradient>
-          </Defs>
-          <Ellipse cx={110} cy={92} rx={98} ry={78} fill="url(#halo)" />
-          <Ellipse cx={110} cy={176} rx={76} ry={9} fill="#28243A" opacity={0.08} />
-        </Svg>
+        <Animated.View style={[{ width: W, height: H }, bodyStyle]}>
+          {/* Halo néon */}
+          <Animated.View style={[{ position: 'absolute', width: W, height: H }, glowStyle]} pointerEvents="none">
+            <Svg width={W} height={H}>
+              <Defs>
+                <RadialGradient id="halo" cx="50%" cy="48%" r="50%">
+                  <Stop offset="0.55" stopColor={ringColor} stopOpacity={0.35} />
+                  <Stop offset="1" stopColor={ringColor} stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Circle cx={CX} cy={CY} r={96} fill="url(#halo)" />
+            </Svg>
+          </Animated.View>
 
-        {/* Trésor visible quand le coffre s'ouvre */}
-        {stage >= 2 ? (
           <Svg width={W} height={H} style={{ position: 'absolute' }}>
-            <Ellipse cx={110} cy={92} rx={58} ry={16} fill="#FFDB86" />
-            <Circle cx={88} cy={88} r={10} fill="#FFC857" stroke="#E0A630" strokeWidth={1.5} />
-            <Circle cx={110} cy={84} r={11} fill="#FFC857" stroke="#E0A630" strokeWidth={1.5} />
-            <Circle cx={132} cy={89} r={10} fill="#FFC857" stroke="#E0A630" strokeWidth={1.5} />
-            {stage >= 3 ? <Circle cx={99} cy={78} r={9} fill="#FFD36E" stroke="#E0A630" strokeWidth={1.5} /> : null}
-            {stage >= 4 ? <Path d="M118 70l4-12 4 12 12 1-10 6 4 12-10-8-10 8 4-12-10-6z" fill="#FF806E" /> : null}
-          </Svg>
-        ) : null}
-
-        {/* Corps */}
-        <Svg width={W} height={H} style={{ position: 'absolute' }}>
-          <Defs>
-            <LinearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor="#8D6CF0" />
-              <Stop offset="1" stopColor="#6443D6" />
-            </LinearGradient>
-          </Defs>
-          <Rect x={42} y={92} width={136} height={80} rx={16} fill="url(#body)" />
-          <Rect x={42} y={92} width={136} height={14} fill="#5636C4" opacity={0.5} />
-          <Rect x={60} y={92} width={14} height={80} fill="#FFC857" />
-          <Rect x={146} y={92} width={14} height={80} fill="#FFC857" />
-          <Rect x={93} y={110} width={34} height={36} rx={9} fill="#FFC857" stroke="#E0A630" strokeWidth={2} />
-          <Circle cx={110} cy={124} r={5} fill="#5636C4" />
-          <Path d="M110 128v9" stroke="#5636C4" strokeWidth={4} strokeLinecap="round" />
-          <G opacity={0.25}>
-            <Rect x={48} y={160} width={124} height={6} rx={3} fill="#FFFFFF" />
-          </G>
-        </Svg>
-
-        {/* Couvercle animé */}
-        <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: W, height: H }, lidStyle]}>
-          <Svg width={W} height={H}>
             <Defs>
-              <LinearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor="#A086F5" />
-                <Stop offset="1" stopColor="#7856E8" />
+              <LinearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor="#2E3628" />
+                <Stop offset="1" stopColor="#11140E" />
+              </LinearGradient>
+              <LinearGradient id="door" x1="0" y1="0" x2="1" y2="1">
+                <Stop offset="0" stopColor="#262D21" />
+                <Stop offset="1" stopColor="#141811" />
               </LinearGradient>
             </Defs>
-            <Path d="M42 96V78c0-22 18-34 68-34s68 12 68 34v18z" fill="url(#lid)" />
-            <Path d="M60 50.5V96h14V46.5zM146 46.5V96h14V50.5z" fill="#FFC857" />
-            <Path d="M54 66c10-10 30-14 56-14" stroke="#FFFFFF" strokeOpacity={0.35} strokeWidth={5} strokeLinecap="round" fill="none" />
-          </Svg>
-        </Animated.View>
-      </Animated.View>
 
-      {stage >= 1 ? <Coin x={38} y={150} r={10} delay={200} /> : null}
-      {stage >= 2 ? <Coin x={186} y={140} r={12} delay={600} /> : null}
-      {stage >= 3 ? <Coin x={170} y={40} r={9} delay={900} /> : null}
-      {stage >= 3 ? <Sparkle x={30} y={60} delay={300} /> : null}
-      {stage >= 4 ? <Sparkle x={180} y={78} size={18} delay={700} color="#45C7B8" /> : null}
-      {stage >= 4 ? <Sparkle x={66} y={18} size={12} delay={1100} color="#FF806E" /> : null}
+            {/* Pieds et ombre */}
+            <Rect x={58} y={170} width={22} height={10} rx={3} fill="#0A0C08" />
+            <Rect x={140} y={170} width={22} height={10} rx={3} fill="#0A0C08" />
+
+            {/* Caisson carré aux coins arrondis */}
+            <Rect x={28} y={8} width={164} height={166} rx={26} fill="url(#frame)" stroke="#3A4434" strokeWidth={1.5} />
+            <Rect x={34} y={14} width={152} height={154} rx={21} fill="none" stroke="#000000" strokeOpacity={0.35} strokeWidth={2} />
+
+            {/* Charnières */}
+            <Rect x={22} y={44} width={10} height={24} rx={4} fill="#3A4434" />
+            <Rect x={22} y={116} width={10} height={24} rx={4} fill="#3A4434" />
+
+            {/* Rivets */}
+            {[
+              [44, 24],
+              [176, 24],
+              [44, 160],
+              [176, 160],
+            ].map(([x, y]) => (
+              <G key={`${x}-${y}`}>
+                <Circle cx={x} cy={y} r={3.2} fill="#4A5442" />
+                <Circle cx={x - 0.8} cy={y - 0.8} r={1.1} fill="#7A8670" />
+              </G>
+            ))}
+
+            {/* Porte ronde */}
+            <Circle cx={CX} cy={CY} r={70} fill="#0B0D09" />
+            <Circle cx={CX} cy={CY} r={64} fill="url(#door)" stroke="#3A4434" strokeWidth={1.5} />
+
+            {/* Anneau segmenté : progression */}
+            {Array.from({ length: SEGMENTS }, (_, i) => {
+              const on = i < lit;
+              return (
+                <Path
+                  key={i}
+                  d={arc(57, i * step + 2.2, (i + 1) * step - 2.2)}
+                  stroke={on ? ringColor : '#2A3224'}
+                  strokeWidth={6}
+                  strokeLinecap="round"
+                  fill="none"
+                  opacity={on ? 1 : 0.9}
+                />
+              );
+            })}
+
+            {/* Verrous périphériques */}
+            {[0, 90, 180, 270].map((deg) => {
+              const p = polar(46, deg);
+              return <Circle key={deg} cx={p.x} cy={p.y} r={3} fill={stage > 0 ? ringColor : '#3A4434'} opacity={stage > 0 ? 0.85 : 1} />;
+            })}
+
+            {/* Reflet sur l'acier */}
+            <Path d={arc(66, 300, 350)} stroke="#FFFFFF" strokeOpacity={0.12} strokeWidth={3} strokeLinecap="round" fill="none" />
+          </Svg>
+
+          <Dial turn={celebrate} />
+        </Animated.View>
       </View>
     </View>
   );

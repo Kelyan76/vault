@@ -18,7 +18,17 @@ export interface SavingsGoal {
   archivedAt?: string | null;
 }
 
-export type GoalIcon = 'plane' | 'laptop' | 'shield' | 'home' | 'gift' | 'bike' | 'book' | 'star';
+export type GoalIcon = 'plane' | 'laptop' | 'shield' | 'home' | 'gift' | 'bike' | 'book' | 'star' | 'moto' | 'car' | 'key';
+
+/** Modèles de sous-coffres proposés ; l'utilisateur peut aussi créer les siens. */
+export const SUBVAULT_PRESETS: { name: string; icon: GoalIcon }[] = [
+  { name: 'Vacances', icon: 'plane' },
+  { name: 'Cadeaux de Noël', icon: 'gift' },
+  { name: 'Passerelle moto', icon: 'key' },
+  { name: 'Prochaine moto', icon: 'moto' },
+  { name: 'Imprévus', icon: 'shield' },
+  { name: 'Entretien voiture', icon: 'car' },
+];
 
 export type SavingsEntryKind = 'declared' | 'observed_transfer';
 
@@ -47,7 +57,8 @@ export interface SavingsEntry {
 export function validateGoal(input: Partial<SavingsGoal>): string | null {
   if (!input.name || input.name.trim().length < 2) return 'Donne un nom à ton objectif.';
   if (input.name.trim().length > 60) return 'Nom trop long (60 caractères max).';
-  if (!input.targetMinor || input.targetMinor <= 0) return 'Le montant cible doit être positif.';
+  // Montant cible facultatif : 0 = sous-coffre sans objectif chiffré.
+  if (input.targetMinor == null || !Number.isInteger(input.targetMinor) || input.targetMinor < 0) return 'Montant cible invalide.';
   if (input.targetMinor > 100_000_000) return 'Montant cible trop élevé.';
   return null;
 }
@@ -103,7 +114,7 @@ export function goalProgress(goal: SavingsGoal, entries: SavingsEntry[]): GoalPr
     declaredMinor: declared,
     observedMinor: observed,
     ratio: goal.targetMinor > 0 ? Math.min(1, saved / goal.targetMinor) : 0,
-    reached: saved >= goal.targetMinor,
+    reached: goal.targetMinor > 0 && saved >= goal.targetMinor,
   };
 }
 
@@ -134,8 +145,9 @@ export type GoalStage = 0 | 1 | 2 | 3 | 4;
 
 /** Stade visuel du coffre (0 = vide, 4 = débordant) selon la progression moyenne des objectifs. */
 export function vaultStage(progress: GoalProgress[]): GoalStage {
-  if (progress.length === 0) return 0;
-  const avg = progress.reduce((s, p) => s + p.ratio, 0) / progress.length;
+  const withTarget = progress.filter((p) => p.goal.targetMinor > 0);
+  if (withTarget.length === 0) return progress.some((p) => p.savedMinor > 0) ? 1 : 0;
+  const avg = withTarget.reduce((s, p) => s + p.ratio, 0) / withTarget.length;
   if (avg >= 1) return 4;
   if (avg >= 0.6) return 3;
   if (avg >= 0.25) return 2;

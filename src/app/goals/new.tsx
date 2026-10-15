@@ -1,4 +1,4 @@
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import type { GoalIcon } from '@shared/domain/savings.ts';
@@ -14,24 +14,25 @@ import { colors, space } from '@/theme/tokens';
 
 export default function NewGoal() {
   const { act, today } = useStore();
+  const params = useLocalSearchParams<{ name?: string; icon?: GoalIcon }>();
   const amount = useAmount();
-  const [name, setName] = useState('');
-  const [icon, setIcon] = useState<GoalIcon>('plane');
+  const [name, setName] = useState(params.name ?? '');
+  const [icon, setIcon] = useState<GoalIcon>(params.icon && params.icon in GOAL_ICONS ? params.icon : 'star');
   const [deadline, setDeadline] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function save() {
-    if (!amount.minor) return setError('Indique un montant cible valide.');
-    const err = act((d, env) => createGoal(d, { name, targetMinor: amount.minor!, icon, deadline }, env));
+    if (amount.minor === null && amount.text.trim() !== '') return setError('Montant cible invalide.');
+    const err = act((d, env) => createGoal(d, { name, targetMinor: amount.minor ?? 0, icon, deadline }, env));
     if (err) return setError(err);
     router.back();
   }
 
   return (
-    <Screen back title="Nouvel objectif" subtitle="Fixe un cap. Tu y avances à ton rythme, chaque euro compte.">
+    <Screen back title="Nouveau sous-coffre" subtitle="Une enveloppe pour un projet précis. Le montant cible est facultatif.">
       <View style={{ gap: space.md }}>
-        <Field label="Nom" value={name} onChangeText={setName} placeholder="ex. Week-end à Lisbonne" maxLength={60} />
-        <AmountField label="Montant cible" amount={amount} />
+        <Field label="Nom" value={name} onChangeText={setName} placeholder="ex. Passerelle moto" maxLength={60} />
+        <AmountField label="Montant cible (facultatif)" amount={amount} />
         <T v="small" color={colors.textMuted}>
           Icône
         </T>
@@ -54,7 +55,7 @@ export default function NewGoal() {
           ))}
         </Row>
         {error ? <Notice tone="alert" text={error} /> : null}
-        <Button label="Créer l’objectif" icon="check" onPress={save} />
+        <Button label="Créer le sous-coffre" icon="check" onPress={save} />
       </View>
     </Screen>
   );

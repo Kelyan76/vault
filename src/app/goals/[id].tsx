@@ -22,7 +22,8 @@ export default function GoalDetail() {
   const [value, setValue] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
   const g = goals.find((x) => x.goal.id === id);
-  if (!g) return <Screen back title="Objectif"><ErrorState text="Objectif introuvable." /></Screen>;
+  if (!g) return <Screen back title="Sous-coffre"><ErrorState text="Sous-coffre introuvable." /></Screen>;
+  const hasTarget = g.goal.targetMinor > 0;
   const cur = g.goal.currency;
   const entries = data.entries.filter((e) => e.allocations.some((a) => a.goalId === g.goal.id)).sort((a, b) => b.date.localeCompare(a.date));
   const left = Math.max(0, g.goal.targetMinor - g.savedMinor);
@@ -33,7 +34,7 @@ export default function GoalDetail() {
     <Screen back>
       <Card style={{ alignItems: 'center', gap: 6 }}>
         <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-          <Ring value={g.ratio} size={140} thickness={14} color={g.reached ? colors.success : colors.habit} />
+          <Ring value={hasTarget ? g.ratio : 1} size={140} thickness={14} color={g.reached ? colors.success : hasTarget ? colors.habit : colors.habitSoft} />
           <View style={{ position: 'absolute' }}>
             <IconBubble name={GOAL_ICONS[g.goal.icon].icon} color={colors.habit} bg={colors.habitSoft} size={54} />
           </View>
@@ -42,7 +43,7 @@ export default function GoalDetail() {
           {g.goal.name}
         </T>
         <T v="number">{money(g.savedMinor, cur)}</T>
-        <T color={colors.textMuted}>sur {money(g.goal.targetMinor, cur)}</T>
+        <T color={colors.textMuted}>{hasTarget ? `sur ${money(g.goal.targetMinor, cur)}` : 'Sans montant cible'}</T>
         {g.reached ? <Pill label="OBJECTIF ATTEINT" color={colors.success} bg={colors.successSoft} icon="check" /> : null}
         <Row gap={6} style={{ marginTop: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
           <Pill label={`DÉCLARÉ ${money(g.declaredMinor, cur)}`} color={colors.primary} bg={colors.primarySoft} />
@@ -50,7 +51,7 @@ export default function GoalDetail() {
         </Row>
       </Card>
 
-      {!g.reached ? (
+      {hasTarget && !g.reached ? (
         <Card style={{ marginTop: space.md, gap: 4 }} tone={colors.habitSoft}>
           <T v="bodyStrong">Encore {money(left, cur)}</T>
           <T v="small" color={colors.textMuted}>
@@ -63,13 +64,13 @@ export default function GoalDetail() {
         </Card>
       ) : null}
 
-      <Button label="Ajouter à cet objectif" icon="coin" style={{ marginTop: space.md }} onPress={() => router.push({ pathname: '/savings/new', params: { goalId: g.goal.id } })} />
+      <Button label="Ajouter à ce sous-coffre" icon="coin" style={{ marginTop: space.md }} onPress={() => router.push({ pathname: '/savings/new', params: { goalId: g.goal.id } })} />
 
       <SectionTitle title="Historique" />
       {msg ? <Notice tone="alert" text={msg} /> : null}
       <Card style={{ gap: 12 }}>
         {entries.length === 0 ? (
-          <T color={colors.textMuted}>Aucune somme pour cet objectif.</T>
+          <T color={colors.textMuted}>Aucune somme dans ce sous-coffre.</T>
         ) : (
           entries.map((e) => {
             const part = e.allocations.find((a) => a.goalId === g.goal.id)!;
@@ -104,7 +105,7 @@ export default function GoalDetail() {
           })
         )}
       </Card>
-      <Button kind="ghost" label="Archiver l’objectif" style={{ marginTop: space.lg }} onPress={() => { act((d, env) => archiveGoal(d, g.goal.id, env)); router.back(); }} />
+      <Button kind="ghost" label="Supprimer ce sous-coffre" style={{ marginTop: space.lg }} onPress={() => { act((d, env) => archiveGoal(d, g.goal.id, env)); router.back(); }} />
     </Screen>
   );
 }

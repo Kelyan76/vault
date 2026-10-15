@@ -1,17 +1,17 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
-import { estimatedSaving, savingsTransferSuggestions, vaultStage, vaultTotals } from '@shared/domain/savings.ts';
-import { confirmSavingsTransfer, emptyVault } from '@/store/actions';
+import { estimatedSaving, savingsTransferSuggestions, SUBVAULT_PRESETS, vaultStage, vaultTotals } from '@shared/domain/savings.ts';
+import { confirmSavingsTransfer, createGoal, emptyVault } from '@/store/actions';
 import { useGoals, useTransactions } from '@/store/hooks';
 import { useStore } from '@/store/store';
 import { GOAL_ICONS } from '@/features/vault/goalIcons';
 import { Chest } from '@/art/Chest';
 import { Screen, EmptyState, Notice } from '@/ui/layout';
-import { IconBubble } from '@/ui/Icon';
-import { Button, Card, Pill, ProgressBar, Row, SectionTitle, T } from '@/ui/primitives';
+import { Icon, IconBubble } from '@/ui/Icon';
+import { Button, Card, Chip, Pill, ProgressBar, Row, SectionTitle, T } from '@/ui/primitives';
 import { money, shortDate } from '@/ui/format';
-import { colors, radius, space } from '@/theme/tokens';
+import { colors, fonts, radius, space } from '@/theme/tokens';
 
 export default function Vault() {
   const { data, act } = useStore();
@@ -24,6 +24,8 @@ export default function Vault() {
   const suggestions = useMemo(() => savingsTransferSuggestions(txs, data.entries).slice(0, 3), [txs, data.entries]);
   const stage = vaultStage(goals);
   const estimated = data.avoided.reduce((s, a) => s + estimatedSaving(a), 0);
+  const taken = new Set(goals.map((g) => g.goal.name.toLowerCase()));
+  const presets = SUBVAULT_PRESETS.filter((p) => !taken.has(p.name.toLowerCase()));
 
   return (
     <Screen title="Mon coffre" subtitle="Un outil de suivi : il représente tes économies, il ne détient aucun argent.">
@@ -39,7 +41,7 @@ export default function Vault() {
         </Row>
         <Row style={{ marginTop: space.sm, alignSelf: 'stretch' }}>
           <Button label="Mettre de côté" icon="coin" onPress={() => router.push('/savings/new')} style={{ flex: 1 }} />
-          <Button kind="secondary" label="Objectif" icon="plus" onPress={() => router.push('/goals/new')} style={{ flex: 1 }} />
+          <Button kind="secondary" label="Sous-coffre" icon="plus" onPress={() => router.push('/goals/new')} style={{ flex: 1 }} />
         </Row>
         <T v="small" color={colors.textMuted} center>
           Ce que tu mets de côté ici est retiré de ta prévision de fin de mois : tu vois ce qu’il te reste vraiment.
@@ -49,7 +51,7 @@ export default function Vault() {
             <View style={{ alignSelf: 'stretch', gap: space.sm, backgroundColor: colors.alertSoft, borderRadius: radius.md, padding: space.md }}>
               <T v="bodyStrong">Vider le coffre ?</T>
               <T v="small">
-                Le coffre et tes objectifs reviennent à 0 €. Les {money(totals.declaredMinor + totals.observedMinor, cur)} redeviennent disponibles dans ta prévision. L’historique est conservé.
+                Le coffre et tes sous-coffres reviennent à 0 €. Les {money(totals.declaredMinor + totals.observedMinor, cur)} redeviennent disponibles dans ta prévision. L’historique est conservé.
               </T>
               <Row>
                 <Button small kind="secondary" label="Annuler" onPress={() => setConfirmEmpty(false)} style={{ flex: 1 }} />
@@ -98,32 +100,50 @@ export default function Vault() {
         </>
       ) : null}
 
-      <SectionTitle title="Objectifs" action="Nouveau" onAction={() => router.push('/goals/new')} />
+      <SectionTitle title="Sous-coffres" action="Personnaliser" onAction={() => router.push('/goals/new')} />
       {goals.length === 0 ? (
-        <EmptyState title="Ton coffre attend un objectif" text="Un voyage, un fonds de sécurité, un nouvel ordinateur… fixe un montant et avance à ton rythme." action="Créer un objectif" onAction={() => router.push('/goals/new')} />
+        <T v="small" color={colors.textMuted} style={{ marginBottom: space.sm }}>
+          Range ton épargne par projet. Touche un modèle pour le créer, ou crée le tien.
+        </T>
       ) : (
-        <View style={{ gap: space.sm }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: space.sm, marginBottom: space.sm }}>
           {goals.map((g) => {
             const meta = GOAL_ICONS[g.goal.icon];
+            const hasTarget = g.goal.targetMinor > 0;
             return (
-              <Card key={g.goal.id} onPress={() => router.push(`/goals/${g.goal.id}`)} style={{ gap: 8 }}>
-                <Row>
-                  <IconBubble name={meta.icon} color={colors.habit} bg={colors.habitSoft} />
-                  <View style={{ flex: 1 }}>
-                    <T v="bodyStrong">{g.goal.name}</T>
-                    <T v="small" color={colors.textMuted}>
-                      {money(g.savedMinor, g.goal.currency)} sur {money(g.goal.targetMinor, g.goal.currency)}
-                      {g.goal.deadline ? ` · avant le ${shortDate(g.goal.deadline)}` : ''}
-                    </T>
-                  </View>
-                  {g.reached ? <Pill label="ATTEINT" color={colors.success} bg={colors.successSoft} icon="check" /> : <T v="bodyStrong" color={colors.habit}>{Math.round(g.ratio * 100)} %</T>}
+              <Card key={g.goal.id} onPress={() => router.push(`/goals/${g.goal.id}`)} style={{ width: '48%', gap: 8 }} accessibilityLabel={g.goal.name}>
+                <Row style={{ justifyContent: 'space-between' }}>
+                  <IconBubble name={meta.icon} color={colors.habit} bg={colors.habitSoft} size={36} />
+                  {g.reached ? <Icon name="check" size={18} color={colors.success} /> : hasTarget ? <T v="small" color={colors.habit}>{Math.round(g.ratio * 100)} %</T> : null}
                 </Row>
-                <ProgressBar value={g.ratio} color={g.reached ? colors.success : colors.habit} track={colors.habitSoft} label={g.goal.name} />
+                <T v="bodyStrong" numberOfLines={1}>
+                  {g.goal.name}
+                </T>
+                <T v="bodyStrong" numberOfLines={1} style={{ fontFamily: fonts.mono, fontSize: 19 }}>{money(g.savedMinor, g.goal.currency)}</T>
+                {hasTarget ? (
+                  <>
+                    <ProgressBar value={g.ratio} color={g.reached ? colors.success : colors.habit} track={colors.habitSoft} label={g.goal.name} />
+                    <T v="tiny" color={colors.textMuted} numberOfLines={1}>
+                      SUR {money(g.goal.targetMinor, g.goal.currency)}
+                      {g.goal.deadline ? ` · ${shortDate(g.goal.deadline)}` : ''}
+                    </T>
+                  </>
+                ) : (
+                  <T v="tiny" color={colors.textMuted}>SANS MONTANT CIBLE</T>
+                )}
               </Card>
             );
           })}
         </View>
       )}
+      {presets.length > 0 ? (
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          {presets.map((p) => (
+            <Chip key={p.name} selected={false} label={`+ ${p.name}`} color={colors.habit} onPress={() => setMsg(act((d, env) => createGoal(d, { name: p.name, targetMinor: 0, icon: p.icon }, env)))} />
+          ))}
+          <Chip selected={false} label="+ Autre…" color={colors.primary} onPress={() => router.push('/goals/new')} />
+        </Row>
+      ) : null}
 
       <SectionTitle title="Dépenses évitées" action="Déclarer" onAction={() => router.push('/avoided/new')} />
       <Card style={{ gap: space.sm }}>

@@ -155,3 +155,14 @@ test('défis : classement par score partagé, jamais par montant', () => {
   assert.equal(validatePseudo('ab'), 'Pseudo de 3 à 20 caractères.');
   assert.equal(validatePseudo('Kélyan_76'), null);
 });
+
+test('sous-coffres : montant cible facultatif', async () => {
+  const { validateGoal, goalProgress, vaultStage, SUBVAULT_PRESETS } = await import('../supabase/functions/_shared/domain/savings.ts');
+  assert.equal(validateGoal({ name: 'Vacances', targetMinor: 0 }), null);
+  assert.equal(validateGoal({ name: 'Vacances', targetMinor: -1 }), 'Montant cible invalide.');
+  const g = { id: 'v', name: 'Vacances', targetMinor: 0, currency: 'EUR', icon: 'plane' as const, createdAt: '' };
+  const p = goalProgress(g, [entry({ amountMinor: 4000, allocations: [{ goalId: 'v', amountMinor: 4000 }] })]);
+  assert.deepEqual([p.savedMinor, p.ratio, p.reached], [4000, 0, false]);
+  assert.equal(vaultStage([p]), 1);
+  assert.ok(SUBVAULT_PRESETS.some((x) => x.name === 'Passerelle moto'));
+});

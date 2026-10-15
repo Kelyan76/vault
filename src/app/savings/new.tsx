@@ -40,7 +40,7 @@ export default function NewSaving() {
         ) : null}
         <AmountField label="Montant" amount={amount} />
         <T v="small" color={colors.textMuted}>
-          Pour quel objectif ? {selected.length > 1 ? '(réparti à parts égales)' : ''}
+          Dans quel sous-coffre ? {selected.length > 1 ? '(réparti à parts égales)' : ''}
         </T>
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
           {goals.map((g) => (

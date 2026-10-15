@@ -10,4 +10,7 @@ export const GOAL_ICONS: Record<GoalIcon, { icon: IconName; label: string }> = {
   bike: { icon: 'bike', label: 'Mobilité' },
   book: { icon: 'book', label: 'Études' },
   star: { icon: 'star', label: 'Autre' },
+  moto: { icon: 'moto', label: 'Moto' },
+  car: { icon: 'car', label: 'Voiture' },
+  key: { icon: 'key', label: 'Permis' },
 };

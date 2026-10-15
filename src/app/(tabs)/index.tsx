@@ -133,12 +133,14 @@ function Tiles() {
   const cur = data.profile.currency;
   const saved = goals.reduce((n, g) => n + g.savedMinor, 0);
   const target = goals.reduce((n, g) => n + g.goal.targetMinor, 0);
-  const ratio = target ? Math.min(1, saved / target) : 0;
+  // Progression calculée sur les seuls sous-coffres qui ont un montant cible.
+  const savedTargeted = goals.filter((g) => g.goal.targetMinor > 0).reduce((n, g) => n + Math.min(g.savedMinor, g.goal.targetMinor), 0);
+  const ratio = target ? Math.min(1, savedTargeted / target) : 0;
   const diff = s.previousToDate.totalSpentMinor > 0 ? Math.round(((s.current.totalSpentMinor - s.previousToDate.totalSpentMinor) / s.previousToDate.totalSpentMinor) * 100) : null;
   return (
     <Row style={{ marginTop: space.lg, alignItems: 'stretch' }} gap={space.sm}>
-      <Card style={styles.tile} onPress={() => router.push('/(tabs)/vault')} accessibilityLabel="Objectifs">
-        <T v="heading">Objectifs</T>
+      <Card style={styles.tile} onPress={() => router.push('/(tabs)/vault')} accessibilityLabel="Coffre">
+        <T v="heading">Coffre</T>
         <View style={{ alignItems: 'center', justifyContent: 'center', marginVertical: space.sm }}>
           <Ring value={ratio} size={112} thickness={12} color={colors.primary} track={colors.cardHigh} />
           <T v="number" style={{ position: 'absolute' }}>

@@ -16,15 +16,16 @@ export function T({ children, v = 'body', color, style, center, numberOfLines }:
 }
 
 export function Card({ children, style, tone, onPress, accessibilityLabel }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: string; onPress?: () => void; accessibilityLabel?: string }) {
-  const body = <View style={[styles.card, tone ? { backgroundColor: tone } : null, style]}>{children}</View>;
-  if (!onPress) return body;
+  if (!onPress) return <View style={[styles.card, tone ? { backgroundColor: tone } : null, style]}>{children}</View>;
+  // La carte cliquable garde la place que lui donne sa mise en page (flex: 1 dans une rangée, largeur en grille).
+  const flat = StyleSheet.flatten(style) ?? {};
+  const body = <View style={[styles.card, tone ? { backgroundColor: tone } : null, style, flat.width != null ? { width: '100%' } : null]}>{children}</View>;
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      // La carte cliquable garde la place que lui donne sa mise en page (ex. flex: 1 dans une rangée).
-      style={({ pressed }) => [{ flex: StyleSheet.flatten(style)?.flex }, pressed && { transform: [{ scale: 0.985 }], opacity: 0.95 }]}
+      style={({ pressed }) => [{ flex: flat.flex, width: flat.width }, pressed && { transform: [{ scale: 0.985 }], opacity: 0.95 }]}
     >
       {body}
     </Pressable>
