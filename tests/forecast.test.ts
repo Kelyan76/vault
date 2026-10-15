@@ -73,3 +73,10 @@ test('département à partir du code postal', () => {
   assert.equal(departmentPrefix('7660'), null);
   assert.equal(departmentPrefix(''), null);
 });
+
+test('courses : ta part quand le foyer partage (moitié-moitié)', () => {
+  const tout = groceryForecast({ adults: 2, teens: 0, children: 0, babies: 0, level: 'econome', mealsOutPerWeek: 0 });
+  const moitie = groceryForecast({ adults: 2, teens: 0, children: 0, babies: 0, level: 'econome', mealsOutPerWeek: 0, myShare: 0.5 });
+  assert.equal(moitie.weeklyMinor, tout.weeklyMinor / 2);
+  assert.equal(validateGrocery({ adults: 2, teens: 0, children: 0, babies: 0, level: 'econome', mealsOutPerWeek: 0, myShare: 1.5 }), 'Ta part doit être comprise entre 1 et 100 %.');
+});

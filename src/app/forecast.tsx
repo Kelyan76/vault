@@ -99,7 +99,7 @@ function FixedItems() {
   return (
     <Card style={{ gap: space.md }}>
       <T v="small" color={colors.textMuted}>
-        Ce qui tombe à date fixe chaque mois, comme le loyer ou les APL. Ces montants remplacent ce que VAULT devine, et ne sont plus comptés dans les dépenses courantes.
+        Ce qui tombe à date fixe chaque mois, comme le loyer ou les APL. Chaque montant est compté tant que sa date n’est pas passée ce mois-ci.
       </T>
       {items.length ? (
         <View style={{ gap: 8 }}>
@@ -288,9 +288,13 @@ export default function Forecast() {
             </T>
           </Row>
           <T v="small" color={colors.textMuted}>
-            Sans salaire ni virement à venir. Tes entrées et sorties fixes sont comptées si leur date n’est pas encore passée ; les autres prélèvements réguliers sont repérés sur{' '}
-            {proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : proj.referenceMonths === 1 ? 'ton dernier mois complet' : 'tes mois précédents (historique encore trop court)'}. Les opérations en attente ne sont pas encore dans ton solde.
+            Calcul : ton solde réel, tes entrées et sorties fixes dont la date n’est pas encore passée, tes courses et ton carburant d’ici la fin du mois. Rien n’est deviné à partir de tes anciennes opérations, et aucun salaire n’est anticipé. Les opérations en attente ne sont pas encore dans ton solde.
           </T>
+          {!(data.fixedItems ?? []).length ? (
+            <T v="small" color={colors.reward}>
+              Ajoute ton loyer et tes autres montants fixes ci-dessous pour qu’ils soient comptés.
+            </T>
+          ) : null}
         </Card>
       ) : null}
 
@@ -304,6 +308,21 @@ export default function Forecast() {
         <Stepper label="Enfants" hint="3 à 11 ans" value={grocery.children} onChange={(n) => setGrocery({ ...grocery, children: n })} />
         <Stepper label="Bébés" hint="moins de 3 ans, hors couches et lait" value={grocery.babies} onChange={(n) => setGrocery({ ...grocery, babies: n })} />
         <Stepper label="Repas pris dehors" hint="par semaine pour tout le foyer (cantine, resto)" value={grocery.mealsOutPerWeek} onChange={(n) => setGrocery({ ...grocery, mealsOutPerWeek: n })} max={60} />
+        <View style={{ gap: 8 }}>
+          <T v="small" color={colors.textMuted}>
+            Ta part des courses
+          </T>
+          <Row gap={8} style={{ flexWrap: 'wrap' }}>
+            {[
+              { label: 'Je paie tout', value: 1 },
+              { label: 'Moitié', value: 0.5 },
+              { label: 'Un tiers', value: 1 / 3 },
+              { label: 'Un quart', value: 0.25 },
+            ].map((o) => (
+              <Chip key={o.label} label={o.label} selected={Math.abs((grocery.myShare ?? 1) - o.value) < 0.01} onPress={() => setGrocery({ ...grocery, myShare: o.value })} />
+            ))}
+          </Row>
+        </View>
         <View style={{ gap: 8 }}>
           <T v="small" color={colors.textMuted}>
             Ton style de courses
@@ -326,10 +345,10 @@ export default function Forecast() {
               </T>
             </Row>
             <T v="small" color={colors.textMuted}>
-              {money(g.weeklyMinor, cur)} par semaine pour {g.persons} personne{g.persons > 1 ? 's' : ''}, soit {money(g.monthlyMinor, cur)} sur un mois entier.
+              {money(g.weeklyMinor, cur)} par semaine {(grocery.myShare ?? 1) < 1 ? `(ta part, foyer de ${g.persons})` : `pour ${g.persons} personne${g.persons > 1 ? 's' : ''}`}, soit {money(g.monthlyMinor, cur)} sur un mois entier.
             </T>
             <T v="small" color={colors.textMuted}>
-              Tes vraies courses : {realGroceries.monthlyMinor !== null ? `${money(realGroceries.monthlyMinor, cur)} par mois en moyenne (${realGroceries.months} mois complet${realGroceries.months > 1 ? 's' : ''})` : 'pas encore assez de données'}.
+              Pour comparer, tes courses passées sur ton compte : {realGroceries.monthlyMinor !== null ? `${money(realGroceries.monthlyMinor, cur)} par mois en moyenne (${realGroceries.months} mois complet${realGroceries.months > 1 ? 's' : ''})` : 'pas encore assez de données'}. Elles ne servent pas au calcul.
             </T>
           </View>
         ) : null}

@@ -19,6 +19,8 @@ export interface GroceryInput {
   level: GroceryLevel;
   /** Repas pris hors du foyer par semaine (cantine, restaurant) pour l'ensemble du foyer : réduisent les courses. */
   mealsOutPerWeek: number;
+  /** Part des courses du foyer que tu paies toi-même (1 = tout, 0,5 = moitié-moitié). */
+  myShare?: number;
 }
 
 /** Repères hebdomadaires par personne, en centimes, selon le niveau. */
@@ -42,6 +44,7 @@ export function validateGrocery(i: GroceryInput): string | null {
   if (counts.some((n) => !Number.isInteger(n) || n < 0 || n > 15)) return 'Nombre de personnes invalide.';
   if (i.adults + i.teens + i.children + i.babies === 0) return 'Le foyer compte au moins une personne.';
   if (!Number.isInteger(i.mealsOutPerWeek) || i.mealsOutPerWeek < 0) return 'Nombre de repas invalide.';
+  if (i.myShare != null && !(i.myShare > 0 && i.myShare <= 1)) return 'Ta part doit être comprise entre 1 et 100 %.';
   return null;
 }
 
@@ -59,7 +62,8 @@ export function groceryForecast(i: GroceryInput): GroceryForecast {
   const persons = i.adults + i.teens + i.children + i.babies;
   const totalMeals = persons * MEALS_PER_PERSON_WEEK;
   const mealsOutShare = totalMeals > 0 ? Math.min(0.6, i.mealsOutPerWeek / totalMeals) : 0;
-  const weekly = Math.round(base * (1 - mealsOutShare));
+  const share = i.myShare != null && i.myShare > 0 && i.myShare <= 1 ? i.myShare : 1;
+  const weekly = Math.round(base * (1 - mealsOutShare) * share);
   return { weeklyMinor: weekly, monthlyMinor: Math.round(weekly * WEEKS_PER_MONTH), persons, mealsOutShare };
 }
 

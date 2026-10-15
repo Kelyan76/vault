@@ -62,6 +62,12 @@ export interface ProjectionInput {
   fixedItems?: FixedItem[];
   /** Compter les revenus réguliers attendus (salaire…). Par défaut non : aucune rentrée d'argent n'est anticipée. */
   includeIncome?: boolean;
+  /**
+   * Deviner des opérations à partir de l'historique (prélèvements réguliers, moyenne des dépenses courantes).
+   * Désactivé par défaut : la prévision ne repose que sur le solde réel, les entrées et sorties fixes déclarées
+   * et les prévisions courses et carburant.
+   */
+  useHistory?: boolean;
 }
 
 export interface Projection {
@@ -151,7 +157,7 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
     buckets.set(key, b);
   }
   // Régulière : vue au moins 2 mois ; avec un seul mois de recul, seulement les opérations de nature fixe.
-  const recurring = [...buckets.values()].filter((b) => (refMonths.length >= 2 ? b.months.size >= 2 : refMonths.length === 1 && b.fixed));
+  const recurring = input.useHistory ? [...buckets.values()].filter((b) => (refMonths.length >= 2 ? b.months.size >= 2 : refMonths.length === 1 && b.fixed)) : [];
   const recurringKeys = new Set(recurring.map((b) => b.key));
 
   const lines: ProjectionLine[] = [];
@@ -186,7 +192,7 @@ export function projectEndOfMonth(input: ProjectionInput): Projection {
   }
 
   // 3. Autres dépenses courantes : moyenne quotidienne hors régulières et hors catégories prévues.
-  if (refMonths.length && daysLeft > 0) {
+  if (input.useHistory && refMonths.length && daysLeft > 0) {
     let total = 0;
     for (const t of flows) {
       if (t.amountMinor >= 0 || t.classified.kind !== 'expense') continue;

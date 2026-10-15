@@ -28,7 +28,7 @@ test('clé d’opération régulière : chiffres et références ignorés', () =
 });
 
 test('fin de mois : régulières à venir, déjà passées exclues, autres dépenses au prorata', () => {
-  const p = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: history(), coverageFrom: '2026-07-01' });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: history(), coverageFrom: '2026-07-01' });
   assert.equal(p.endOfMonth, '2026-10-31');
   assert.equal(p.daysLeft, 16);
   assert.equal(p.referenceMonths, 3);
@@ -46,7 +46,7 @@ test('fin de mois : régulières à venir, déjà passées exclues, autres dépe
 
 test('le jour du mois compte : au 2 octobre, salaire et loyer sont encore à venir', () => {
   const rows = history().filter((t) => t.date < '2026-10-01');
-  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01', includeIncome: true });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01', includeIncome: true });
   // Le salaire (le 1er) a un jour de retard : il est encore attendu (tolérance de 3 jours).
   const income = p.lines.find((l) => l.kind === 'income');
   assert.equal(income?.amountMinor, 165000);
@@ -81,8 +81,8 @@ test('entrées et sorties fixes : loyer du 10 avec électricité variable, APL d
     { id: 'loyer', label: 'Loyer', amountMinor: 49700, direction: 'out' as const, day: 10 },
     { id: 'apl', label: 'APL', amountMinor: 34400, direction: 'in' as const, day: 5 },
   ];
-  const sansFixes = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01' });
-  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01', fixedItems });
+  const sansFixes = projectEndOfMonth({ useHistory: true, today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01' });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-02', balanceMinor: 100000, currency: 'EUR', transactions: classifyAll(rows), coverageFrom: '2026-07-01', fixedItems });
   // Avec les entrées fixes, le loyer ne gonfle plus les dépenses courantes : seules les 3 sorties resto restent.
   const variable = p.lines.find((l) => l.kind === 'variable')!;
   assert.equal(variable.amountMinor, -Math.round((9000 / 92) * 29));
@@ -91,12 +91,12 @@ test('entrées et sorties fixes : loyer du 10 avec électricité variable, APL d
   assert.deepEqual(p.lines.filter((l) => l.kind === 'fixed').map((l) => [l.label, l.amountMinor, l.day]), [['APL', 34400, 5], ['Loyer', -49700, 10]]);
   // Le 15 octobre, avec loyer et APL déjà passés ce mois-ci : plus rien à compter.
   const oct = classifyAll([...rows, tx({ date: '2026-10-05', amountMinor: 34400, label: 'CAF APL 10' }), tx({ date: '2026-10-10', amountMinor: -51200, label: 'VIR LOYER OCTOBRE M DUPONT' })]);
-  const mid = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: oct, coverageFrom: '2026-07-01', fixedItems });
+  const mid = projectEndOfMonth({ useHistory: true, today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: oct, coverageFrom: '2026-07-01', fixedItems });
   assert.ok(!mid.lines.some((l) => l.kind === 'fixed'));
 });
 
 test('sans historique complet : seulement le solde et la prévision', () => {
-  const p = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 50000, currency: 'EUR', transactions: history(), coverageFrom: '2026-10-01' });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-15', balanceMinor: 50000, currency: 'EUR', transactions: history(), coverageFrom: '2026-10-01' });
   assert.equal(p.referenceMonths, 0);
   assert.deepEqual(p.lines, []);
   assert.equal(p.projectedMinor, 50000);
@@ -108,7 +108,7 @@ test('un seul mois de recul : loyer, abonnements et salaire restent réguliers, 
     tx({ date: '2026-09-25', amountMinor: -52000, label: 'PRLV LOYER APPARTEMENT', operationType: 'direct_debit' }),
     tx({ date: '2026-09-12', amountMinor: -3000, label: 'PIZZA NAPOLI' }),
   ]);
-  const p = projectEndOfMonth({ today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: rows, coverageFrom: '2026-09-01' });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-15', balanceMinor: 100000, currency: 'EUR', transactions: rows, coverageFrom: '2026-09-01' });
   assert.equal(p.referenceMonths, 1);
   const loyer = p.lines.find((l) => l.label === 'PRLV LOYER APPARTEMENT')!;
   assert.deepEqual([loyer.kind, loyer.amountMinor, loyer.day], ['recurring', -52000, 25]);
@@ -120,9 +120,24 @@ test('un seul mois de recul : loyer, abonnements et salaire restent réguliers, 
 
 test('par défaut, aucune rentrée d’argent n’est anticipée (ni salaire, ni virement reçu)', () => {
   const rows = history().filter((t) => t.date < '2026-10-01');
-  const p = projectEndOfMonth({ today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01' });
+  const p = projectEndOfMonth({ useHistory: true, today: '2026-10-02', balanceMinor: 20000, currency: 'EUR', transactions: rows, coverageFrom: '2026-07-01' });
   assert.ok(p.lines.every((l) => l.amountMinor < 0));
   assert.ok(!p.lines.some((l) => l.kind === 'income'));
   // Le loyer à venir reste bien déduit.
   assert.ok(p.lines.some((l) => l.label === 'PRLV LOYER APPARTEMENT'));
+});
+
+test('par défaut : aucune opération devinée, seulement solde, entrées et sorties fixes, courses et carburant', () => {
+  const fixedItems = [{ id: 'loyer', label: 'Loyer', amountMinor: 49700, direction: 'out' as const, day: 20 }];
+  const p = projectEndOfMonth({
+    today: '2026-10-15',
+    balanceMinor: 46800,
+    currency: 'EUR',
+    transactions: history(),
+    coverageFrom: '2026-07-01',
+    fixedItems,
+    forecastRemaining: { groceriesMinor: 7600, fuelMinor: 4500 },
+  });
+  assert.deepEqual(p.lines.map((l) => l.kind), ['fixed', 'forecast', 'forecast']);
+  assert.equal(p.projectedMinor, 46800 - 49700 - 7600 - 4500);
 });
