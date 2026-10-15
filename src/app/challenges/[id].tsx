@@ -44,7 +44,7 @@ export default function ChallengeDetail() {
             <T v="heading" style={{ width: 26 }} color={r.rank === 1 ? colors.rewardInk : colors.textMuted}>
               {r.rank}
             </T>
-            <Avatar id={r.avatar as never} size={40} ring={r.userId === 'me' ? colors.primary : undefined} />
+            <Avatar id={r.avatar as never} name={r.pseudo} size={40} ring={r.userId === 'me' ? colors.primary : undefined} />
             <T v="bodyStrong" style={{ flex: 1 }}>
               {r.userId === 'me' ? `${r.pseudo} (toi)` : r.pseudo}
             </T>

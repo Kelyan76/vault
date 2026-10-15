@@ -103,12 +103,12 @@ export default function Onboarding() {
             <T v="heading">Créer mon profil</T>
             <Field label="Pseudo (visible par tes amis)" value={pseudo} onChangeText={(t) => { setPseudo(t); setError(null); }} placeholder="ex. Camille_76" autoCapitalize="none" error={error} maxLength={20} />
             <T v="small" color={colors.textMuted}>
-              Avatar
+              Couleur de ton badge
             </T>
             <View style={styles.avatars}>
               {AVATARS.map((a) => (
                 <Pressable key={a} onPress={() => setAvatar(a)} accessibilityRole="radio" accessibilityState={{ selected: avatar === a }} accessibilityLabel={avatarLabel(a)}>
-                  <Avatar id={a} size={52} ring={avatar === a ? colors.primary : undefined} />
+                  <Avatar id={a} name={pseudo} size={52} ring={avatar === a ? colors.text : undefined} />
                 </Pressable>
               ))}
             </View>

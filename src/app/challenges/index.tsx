@@ -113,7 +113,7 @@ export default function Challenges() {
               </T>
               <Row gap={4}>
                 {c.participants.filter((p) => !p.left).map((p) => (
-                  <Avatar key={p.userId} id={p.avatar as never} size={30} />
+                  <Avatar key={p.userId} id={p.avatar as never} name={p.pseudo} size={30} />
                 ))}
               </Row>
             </Card>

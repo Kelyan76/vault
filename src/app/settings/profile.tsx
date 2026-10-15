@@ -18,12 +18,12 @@ export default function EditProfile() {
       <View style={{ gap: space.md }}>
         <Field label="Pseudo" value={pseudo} onChangeText={setPseudo} autoCapitalize="none" maxLength={20} />
         <T v="small" color={colors.textMuted}>
-          Avatar
+          Couleur de ton badge
         </T>
         <Row gap={10} style={{ flexWrap: 'wrap' }}>
           {AVATARS.map((a) => (
             <Pressable key={a} onPress={() => setAvatar(a)} accessibilityRole="radio" accessibilityState={{ selected: avatar === a }} accessibilityLabel={avatarLabel(a)}>
-              <Avatar id={a} size={56} ring={avatar === a ? colors.primary : undefined} />
+              <Avatar id={a} name={pseudo} size={56} ring={avatar === a ? colors.text : undefined} />
             </Pressable>
           ))}
         </Row>

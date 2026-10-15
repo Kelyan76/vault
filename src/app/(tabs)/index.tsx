@@ -40,7 +40,7 @@ function Header() {
         </T>
       </Row>
       <Pressable onPress={() => router.push('/(tabs)/profile')} accessibilityLabel="Profil">
-        <Avatar id={data.profile.avatar} size={46} ring={colors.reward} />
+        <Avatar id={data.profile.avatar} name={data.profile.pseudo} size={46} ring={colors.reward} />
         {data.achievements.length ? (
           <View style={styles.badgeCount}>
             <T v="tiny" color={colors.onColor}>

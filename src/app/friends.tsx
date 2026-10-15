@@ -28,7 +28,7 @@ function FriendRow({ f }: { f: FriendItem }) {
   return (
     <Card style={{ gap: 8 }}>
       <Row>
-        <Avatar id={f.avatar} size={44} />
+        <Avatar id={f.avatar} name={f.pseudo} size={44} />
         <View style={{ flex: 1 }}>
           <T v="bodyStrong">{f.pseudo}</T>
           <Row gap={6}>

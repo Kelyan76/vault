@@ -35,7 +35,7 @@ export default function Profile() {
   return (
     <Screen>
       <Card style={{ alignItems: 'center', gap: 6 }}>
-        <Avatar id={data.profile.avatar} size={84} />
+        <Avatar id={data.profile.avatar} name={data.profile.pseudo} size={84} />
         <T v="title">{data.profile.pseudo}</T>
         <T color={colors.textMuted}>
           Niveau {lvl.level} · {levelTitle(lvl.level)} · {lvl.xp} XP
