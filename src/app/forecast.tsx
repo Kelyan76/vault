@@ -20,12 +20,12 @@ import {
   type GroceryLevel,
 } from '@shared/domain/forecast.ts';
 import { applyForecastBudgets, saveForecast } from '@/store/actions';
-import { useDataQuality, useTransactions } from '@/store/hooks';
+import { useDataQuality, useProjection, useTransactions } from '@/store/hooks';
 import { useStore } from '@/store/store';
 import { Screen, Notice } from '@/ui/layout';
 import { Icon } from '@/ui/Icon';
 import { Button, Card, Chip, Field, IconButton, Row, SectionTitle, T } from '@/ui/primitives';
-import { money } from '@/ui/format';
+import { money, shortDate } from '@/ui/format';
 import { colors, fonts, radius, space } from '@/theme/tokens';
 
 function Stepper({ label, hint, value, onChange, max = 15 }: { label: string; hint?: string; value: number; onChange: (n: number) => void; max?: number }) {
@@ -116,9 +116,49 @@ export default function Forecast() {
   }
 
   const total = (g?.monthlyMinor ?? 0) + (f?.monthlyMinor ?? 0);
+  const proj = useProjection();
 
   return (
-    <Screen back title="Prévisions" subtitle="Estime tes courses et ton essence du mois, puis compare avec tes vraies dépenses.">
+    <Screen back title="Prévisions" subtitle="Ce qu’il te restera à la fin du mois, et le détail de tes courses et de ton essence.">
+      {proj ? (
+        <Card style={{ gap: space.sm, marginBottom: space.md }}>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <T v="heading">Fin du mois</T>
+            <T v="tiny" color={colors.textMuted}>
+              AU {shortDate(today).toUpperCase()} · {proj.daysLeft} J RESTANTS
+            </T>
+          </Row>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <T color={colors.textMuted}>Solde actuel</T>
+            <T v="bodyStrong" style={{ fontFamily: fonts.mono }}>
+              {money(proj.balanceMinor, cur)}
+            </T>
+          </Row>
+          {proj.lines.map((l, i) => (
+            <Row key={i} style={{ justifyContent: 'space-between' }}>
+              <T v="small" color={colors.textMuted} style={{ flex: 1 }} numberOfLines={1}>
+                {l.label}
+                {l.day ? ` · le ${l.day}` : ''}
+              </T>
+              <T v="small" style={{ fontFamily: fonts.mono }} color={l.amountMinor > 0 ? colors.success : colors.text}>
+                {money(l.amountMinor, cur, true)}
+              </T>
+            </Row>
+          ))}
+          <View style={{ height: 1, backgroundColor: colors.border }} />
+          <Row style={{ justifyContent: 'space-between' }}>
+            <T v="heading">Solde prévu le {shortDate(proj.endOfMonth)}</T>
+            <T v="number" style={{ fontSize: 22 }} color={proj.projectedMinor < 0 ? colors.alert : colors.primary}>
+              {money(proj.projectedMinor, cur)}
+            </T>
+          </Row>
+          <T v="small" color={colors.textMuted}>
+            {proj.referenceMonths
+              ? `Estimation : prélèvements et revenus réguliers repérés sur ${proj.referenceMonths > 1 ? `tes ${proj.referenceMonths} derniers mois complets` : 'ton dernier mois complet'}, autres dépenses au prorata des jours restants${data.forecast ? ', courses et carburant selon ta prévision enregistrée' : ''}. Les opérations en attente ne sont pas encore dans ton solde.`
+              : 'Historique trop court pour repérer tes opérations régulières : la prévision s’affinera après un mois complet de données.'}
+          </T>
+        </Card>
+      ) : null}
       <View style={{ backgroundColor: colors.reward, borderRadius: radius.lg, padding: space.lg, gap: 4 }}>
         <T v="heading" color={colors.onColor}>
           Prévision du mois

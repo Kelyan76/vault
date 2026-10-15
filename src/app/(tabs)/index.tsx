@@ -1,17 +1,14 @@
 import { router, type Href } from 'expo-router';
-import { useMemo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { questById } from '@shared/domain/quests.ts';
 import { addDays, isoWeekKey } from '@shared/domain/dates.ts';
-import { vaultStage, vaultTotals } from '@shared/domain/savings.ts';
 import { levelTitle } from '@shared/domain/xp.ts';
 import { STATUS_COPY } from '@shared/banking/status.ts';
 import { REVIEW_HABIT_ID } from '@shared/domain/quests.ts';
 import { toggleHabit } from '@/store/actions';
-import { useGoals, useProgress, useQuestEvaluations, useSpending, useStreaks, useTransactions } from '@/store/hooks';
+import { useGoals, useProgress, useProjection, useQuestEvaluations, useSpending, useStreaks } from '@/store/hooks';
 import { useStore } from '@/store/store';
 import { useBank } from '@/features/bank/useBank';
-import { Chest } from '@/art/Chest';
 import { Avatar } from '@/art/Avatar';
 import { LogoMark } from '@/art/Logo';
 import { Screen } from '@/ui/layout';
@@ -19,7 +16,7 @@ import { Icon, type IconName } from '@/ui/Icon';
 import { Button, Card, Pill, ProgressBar, Row, SectionTitle, T } from '@/ui/primitives';
 import { Bubbles, Ring } from '@/ui/charts';
 import { categoryMeta } from '@/ui/categories';
-import { money, relativeTime, weekday } from '@/ui/format';
+import { money, relativeTime, shortDate, weekday } from '@/ui/format';
 import { colors, fonts, radius, space } from '@/theme/tokens';
 
 const ACTIONS: { label: string; icon: IconName; color: string; href: Href }[] = [
@@ -55,31 +52,59 @@ function Header() {
 
 function HeroCard() {
   const { data, today } = useStore();
-  const goals = useGoals();
-  const txs = useTransactions();
+  const p = useProjection();
   const cur = data.profile.currency;
-  const totals = vaultTotals(data.entries)[cur] ?? { declaredMinor: 0, observedMinor: 0 };
-  const spentToday = useMemo(
-    () => txs.filter((t) => t.date === today && t.currency === cur && t.status === 'booked' && t.classified.kind === 'expense').reduce((s, t) => s - t.amountMinor, 0),
-    [txs, today, cur],
-  );
-  return (
-    <Pressable onPress={() => router.push('/(tabs)/vault')} accessibilityRole="button" accessibilityLabel="Ouvrir mon coffre" style={styles.hero}>
-      <View style={{ flex: 1, gap: 6 }}>
-        <T v="heading" color={colors.onColor}>
-          Mon coffre
-        </T>
-        <T v="numberXL" color={colors.onColor} numberOfLines={1} style={{ fontSize: 38 }}>
-          {money(totals.declaredMinor + totals.observedMinor, cur)}
-        </T>
-        <View style={styles.heroPill}>
-          <Icon name="arrowDown" size={13} color={colors.primary} strokeWidth={3} />
-          <T v="small" color={colors.primary} style={{ fontFamily: fonts.mono }}>
-            {money(spentToday, cur)} aujourd’hui
+  if (!p) {
+    // Pas de solde bancaire : on invite à connecter la banque, sans afficher de solde inventé.
+    return (
+      <Pressable onPress={() => router.push('/bank')} accessibilityRole="button" accessibilityLabel="Connecter ma banque" style={styles.hero}>
+        <View style={{ flex: 1, gap: 6 }}>
+          <T v="heading" color={colors.onColor}>
+            Solde actuel
+          </T>
+          <T v="title" color={colors.onColor}>
+            Connecte ta banque
+          </T>
+          <T v="small" color={colors.onColor}>
+            Pour voir ton solde et ce qu’il te restera à la fin du mois.
           </T>
         </View>
+      </Pressable>
+    );
+  }
+  const diff = p.projectedMinor - p.balanceMinor;
+  const negative = p.projectedMinor < 0;
+  return (
+    <Pressable onPress={() => router.push('/forecast')} accessibilityRole="button" accessibilityLabel={`Solde actuel ${money(p.balanceMinor, cur)}, prévu fin du mois ${money(p.projectedMinor, cur)}`} style={styles.hero}>
+      <View style={{ flex: 1, gap: 4 }}>
+        <T v="heading" color={colors.onColor}>
+          Solde actuel
+        </T>
+        <T v="numberXL" color={colors.onColor} numberOfLines={1} style={{ fontSize: 36, lineHeight: 44 }}>
+          {money(p.balanceMinor, cur)}
+        </T>
+        <View style={styles.projection}>
+          <View style={{ flex: 1 }}>
+            <T v="tiny" color={colors.textMuted}>
+              FIN DU MOIS · {shortDate(p.endOfMonth).toUpperCase()}
+            </T>
+            <T v="number" color={negative ? colors.alert : colors.primary} style={{ fontSize: 24, lineHeight: 30 }} numberOfLines={1}>
+              {money(p.projectedMinor, cur)}
+            </T>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <T v="tiny" color={diff < 0 ? colors.quest : colors.primary}>
+              {diff < 0 ? '▼' : '▲'} {money(Math.abs(diff), cur)}
+            </T>
+            <T v="tiny" color={colors.textMuted}>
+              {p.daysLeft > 0 ? `encore ${p.daysLeft} j` : 'dernier jour'}
+            </T>
+          </View>
+        </View>
+        <T v="tiny" color={colors.onColor} style={{ opacity: 0.75 }}>
+          AU {shortDate(today).toUpperCase()} · {p.referenceMonths ? 'ESTIMATION SUR TES MOIS PRÉCÉDENTS' : 'HISTORIQUE TROP COURT, ESTIMATION PARTIELLE'}
+        </T>
       </View>
-      <Chest stage={vaultStage(goals)} size={0.52} />
     </Pressable>
   );
 }
@@ -369,7 +394,7 @@ const styles = StyleSheet.create({
     paddingRight: space.xs,
     minHeight: 150,
   },
-  heroPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: colors.background, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 5 },
+  projection: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.background, borderRadius: radius.md, paddingHorizontal: space.md, paddingVertical: 10, marginTop: 6 },
   actionCircle: { width: 66, height: 66, borderRadius: 33, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: colors.background },
   tile: { flex: 1, padding: space.md, gap: 2 },
   level: { backgroundColor: colors.reward, borderRadius: radius.lg, padding: space.lg, gap: 4 },

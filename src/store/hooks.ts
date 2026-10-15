@@ -5,6 +5,9 @@ import { budgetStatus } from '@shared/domain/budgets.ts';
 import { allTransactions, dataQuality, evaluateAll, goalsProgress, progress, questContext, streaks } from './derive';
 import { useStore } from './store';
 import { useServerBank } from '@/features/bank/serverBank';
+import { useBank } from '@/features/bank/useBank';
+import { fuelForecast, groceryForecast } from '@shared/domain/forecast.ts';
+import { projectEndOfMonth } from '@shared/domain/projection.ts';
 
 export function useTransactions(): ClassifiedTransaction[] {
   const { data } = useStore();
@@ -60,4 +63,38 @@ export function useSpending(kind: PeriodKind, offset = 0) {
       .sort((a, b) => b.ratio - a.ratio);
     return { period, current, previous, previousToDate: offset === 0 ? previousToDate : previous, budgets };
   }, [txs, today, kind, offset, data.budgets, data.profile.currency]);
+}
+
+/**
+ * Solde actuel (comptes courants et cartes de la devise du profil) et solde prévu en fin de mois.
+ * null si aucun compte bancaire ne donne de solde.
+ */
+export function useProjection() {
+  const { data, today } = useStore();
+  const bank = useBank();
+  const txs = useTransactions();
+  const quality = useDataQuality();
+  return useMemo(() => {
+    const cur = data.profile.currency;
+    const live = new Set(bank.connections.filter((c) => !c.disconnectedAt).map((c) => c.id));
+    const accounts = bank.accounts.filter((a) => live.has(a.connectionId) && a.currency === cur && a.balanceMinor !== null);
+    const daily = accounts.filter((a) => a.type === 'checking' || a.type === 'card');
+    const used = daily.length ? daily : accounts;
+    if (!used.length) return null;
+    const balance = used.reduce((s, a) => s + (a.balanceMinor ?? 0), 0);
+    const ids = new Set(used.map((a) => a.id));
+    const forecast = data.forecast
+      ? { groceriesMonthlyMinor: groceryForecast(data.forecast.grocery).monthlyMinor, fuelMonthlyMinor: fuelForecast(data.forecast.fuel).monthlyMinor }
+      : null;
+    const projection = projectEndOfMonth({
+      today,
+      balanceMinor: balance,
+      currency: cur,
+      // Seulement les opérations des comptes pris en compte dans le solde.
+      transactions: txs.filter((t) => t.source === 'manual' || (t.accountId ? ids.has(t.accountId) : false)),
+      coverageFrom: quality.coverageFrom,
+      forecast,
+    });
+    return { ...projection, accounts: used.length, lastSyncAt: bank.connections.map((c) => c.lastSyncAt).filter(Boolean).sort()[0] ?? null };
+  }, [data.profile.currency, data.forecast, bank.accounts, bank.connections, txs, quality.coverageFrom, today]);
 }
